@@ -33,8 +33,77 @@ const ROLE = {
     team: 'ฝ่ายหมู่บ้าน',
     desc: 'ไม่มีพลังพิเศษ ใช้การสังเกต การถกเถียง และการโหวตเพื่อกำจัดหมาป่า',
   },
+  minion: {
+    name: 'สมุนหมาป่า',
+    team: 'ฝ่ายหมาป่า',
+    desc: 'รู้ว่าใครเป็นหมาป่า แต่หมาป่าไม่รู้ว่าคุณเป็นใคร ผู้หยั่งรู้จะเห็นว่าคุณไม่ใช่หมาป่า ชนะเมื่อหมาป่าชนะ',
+  },
+  sorceress: {
+    name: 'แม่มดสายมืด',
+    team: 'ฝ่ายหมาป่า',
+    desc: 'ทุกคืนเลือกผู้เล่น 1 คน เพื่อรู้ว่าเป็นผู้หยั่งรู้หรือไม่ ผู้หยั่งรู้จะเห็นว่าคุณไม่ใช่หมาป่า ชนะเมื่อหมาป่าชนะ',
+  },
+  cupid: {
+    name: 'คิวปิด',
+    team: 'ฝ่ายหมู่บ้าน',
+    desc: 'คืนแรกเลือกผู้เล่น 2 คนให้เป็นคู่รัก (เลือกตัวเองได้) ถ้าคนหนึ่งตาย อีกคนจะตรอมใจตายตาม',
+  },
+  prince: {
+    name: 'เจ้าชาย',
+    team: 'ฝ่ายหมู่บ้าน',
+    desc: 'ถ้าถูกโหวตประหารครั้งแรก จะเปิดเผยตัวและรอดชีวิต',
+  },
+  mayor: {
+    name: 'ผู้ใหญ่บ้าน',
+    team: 'ฝ่ายหมู่บ้าน',
+    desc: 'ทุกคนรู้ว่าคุณคือผู้ใหญ่บ้าน เสียงโหวตของคุณนับเป็น 2 เสียง',
+  },
+  spellcaster: {
+    name: 'หมอผี',
+    team: 'ฝ่ายหมู่บ้าน',
+    desc: 'ทุกคืนเลือกสาปผู้เล่น 1 คนให้พูดไม่ได้ (พิมพ์แชทไม่ได้) ตลอดวันถัดไป แต่ยังโหวตได้',
+  },
+  lycan: {
+    name: 'ลูกครึ่งหมาป่า',
+    team: 'ฝ่ายหมู่บ้าน',
+    desc: 'เป็นชาวบ้านธรรมดา แต่ถ้าผู้หยั่งรู้ส่อง จะเห็นว่าคุณเป็นหมาป่า',
+  },
+  cursed: {
+    name: 'ผู้ถูกสาป',
+    team: 'ฝ่ายหมู่บ้าน',
+    desc: 'เริ่มเกมเป็นชาวบ้าน แต่ถ้าถูกหมาป่ากัดจะไม่ตาย กลายเป็นหมาป่าแทน',
+  },
+  tanner: {
+    name: 'คนเบื่อโลก',
+    team: 'ฝ่ายอิสระ',
+    desc: 'ชนะคนเดียวถ้าถูกหมู่บ้านโหวตประหาร ตายวิธีอื่นถือว่าแพ้',
+  },
 };
-const ROLE_ORDER = ['werewolf', 'seer', 'bodyguard', 'witch', 'hunter', 'villager'];
+// One-line summaries for the setup list; the card and rules carry the full text.
+const ROLE_SHORT = {
+  werewolf: 'กัดชาวบ้านทุกคืน',
+  minion: 'รู้ตัวหมาป่า แต่หมาป่าไม่รู้จัก',
+  sorceress: 'ตามหาผู้หยั่งรู้ทุกคืน',
+  seer: 'ส่องว่าใครเป็นหมาป่า',
+  bodyguard: 'ปกป้อง 1 คนทุกคืน',
+  witch: 'ยาชุบชีวิตและยาพิษอย่างละขวด',
+  hunter: 'ตายแล้วยิงพาไปอีก 1 คน',
+  cupid: 'จับคู่รัก ตายตามกัน',
+  prince: 'รอดจากการโหวตครั้งแรก',
+  mayor: 'ทุกคนรู้ตัว โหวตนับ 2 เสียง',
+  spellcaster: 'สาปให้คนพูดไม่ได้ 1 วัน',
+  lycan: 'ผู้หยั่งรู้เห็นเป็นหมาป่า',
+  cursed: 'โดนกัดแล้วกลายเป็นหมาป่า',
+  villager: 'คำนวณจากจำนวนผู้เล่นที่เหลือ',
+  tanner: 'ชนะถ้าถูกโหวตประหาร',
+};
+const ROLE_GROUPS = [
+  ['ฝ่ายหมู่บ้าน', ['seer', 'bodyguard', 'witch', 'hunter', 'cupid', 'prince', 'mayor', 'spellcaster', 'lycan', 'cursed', 'villager']],
+  ['ฝ่ายหมาป่า', ['werewolf', 'minion', 'sorceress']],
+  ['ฝ่ายอิสระ', ['tanner']],
+];
+const ROLE_ORDER = ['werewolf', 'minion', 'sorceress', 'seer', 'bodyguard', 'witch', 'hunter', 'cupid', 'prince', 'mayor', 'spellcaster', 'lycan', 'cursed', 'villager', 'tanner'];
+const WOLF_TEAM = ['werewolf', 'minion', 'sorceress'];
 
 const GLYPH = {
   werewolf: '<path d="M4 3l4.5 5h7L20 3v8.5c0 4.8-3.6 8.6-8 9.5-4.4-.9-8-4.7-8-9.5z"/><path d="M9 12.5l1.2.8M15 12.5l-1.2.8M10.5 17l1.5 1 1.5-1"/>',
@@ -43,6 +112,15 @@ const GLYPH = {
   witch: '<path d="M9.5 2.5h5M10.5 2.5V8L5.3 17.6A2.8 2.8 0 0 0 7.8 21.5h8.4a2.8 2.8 0 0 0 2.5-3.9L13.5 8V2.5"/><path d="M7.2 14.5h9.6"/><circle cx="11" cy="17.8" r=".6"/><circle cx="14" cy="16.8" r=".6"/>',
   hunter: '<circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.5"/><path d="M12 1.5v5M12 17.5v5M1.5 12h5M17.5 12h5"/>',
   villager: '<path d="M3 11l9-7 9 7"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5h4v5"/>',
+  minion: '<path d="M14.5 3.5l6 6-9.5 9.5-3-3z"/><path d="M8 16l-4.5 4.5M5.5 13.5l5 5"/>',
+  sorceress: '<circle cx="12" cy="10" r="6.5"/><path d="M9 7.5a3.5 3.5 0 0 1 3-1.5"/><path d="M6.5 21h11M9 16.5l-1 4.5M15 16.5l1 4.5"/>',
+  cupid: '<path d="M12 20s-7-4.3-7-9.6A3.9 3.9 0 0 1 12 8a3.9 3.9 0 0 1 7 2.4C19 15.7 12 20 12 20z"/><path d="M2.5 21.5L9 15M2.5 18v3.5H6"/>',
+  prince: '<path d="M3 8.5l4.5 4 4.5-7 4.5 7 4.5-4-2 10.5H5z"/><path d="M5 21h14"/>',
+  mayor: '<path d="M7.5 3.5h9v11h-9z"/><path d="M3 14.5h18v3H3z"/><path d="M7.5 10h9"/>',
+  spellcaster: '<path d="M3.5 12c3-4.5 14-4.5 17 0-3 4.5-14 4.5-17 0z"/><path d="M3.5 12h17"/><path d="M4 4l16 16"/>',
+  lycan: '<path d="M19.5 14.5A8 8 0 1 1 9.5 4.5a6.5 6.5 0 0 0 10 10z"/><circle cx="15" cy="8" r="1"/>',
+  cursed: '<path d="M12 3l2.4 5.6 6.1.6-4.6 4 1.4 6-5.3-3.2-5.3 3.2 1.4-6-4.6-4 6.1-.6z"/><path d="M12 9.5v3"/>',
+  tanner: '<path d="M12 2.5v6"/><circle cx="12" cy="13" r="4.5"/><path d="M9 21.5h6"/>',
 };
 
 // ---------- small utils ----------
@@ -118,6 +196,7 @@ const S = {
   offset: 0,
   stageKey: '',
   sel: null,
+  pair: [],
   witchSave: false,
   flipped: false,
   narrator: !!store.get('ww.narrator'),
@@ -194,6 +273,7 @@ function onView(v) {
     const first = !S.stageKey;
     S.stageKey = key;
     S.sel = v.night?.action?.chosen ?? v.vote?.mine ?? null;
+    S.pair = [...(v.night?.action?.chosenPair || [])];
     S.witchSave = false;
     S.flipped = false;
     S.fresh = true;
@@ -243,7 +323,7 @@ function onStageChange(v) {
   } else if (phase === 'hunter') {
     speak(`นายพราน ${nameOf(v, v.hunter.id)} ล้มลง แต่ยังมีแรงยิงอีกหนึ่งนัด`);
   } else if (phase === 'end') {
-    speak(v.room.winner === 'wolf' ? 'เกมจบแล้ว ฝ่ายหมาป่าชนะ' : 'เกมจบแล้ว ฝ่ายหมู่บ้านชนะ');
+    speak(`เกมจบแล้ว ${WIN[v.room.winner][1]}`);
   }
 }
 
@@ -305,7 +385,7 @@ function setupChips(v) {
 function token(p, v, o = {}) {
   const inGame = v.room.phase !== 'lobby';
   const isMe = p.id === v.me.id;
-  const mate = v.me.role === 'werewolf' && p.role === 'werewolf' && !isMe;
+  const mate = (v.me.role === 'werewolf' || v.me.role === 'minion') && p.role === 'werewolf' && !isMe;
   const selectable = o.selectable?.has(p.id);
   const el = selectable ? 'button' : 'div';
   const cls = ['token', !p.alive && 'dead', mate && 'mate', isMe && 'me'].filter(Boolean).join(' ');
@@ -319,10 +399,13 @@ function token(p, v, o = {}) {
   if (!p.connected) tag += `<span class="tag">หลุดการเชื่อมต่อ</span>`;
   if (p.isHost && !inGame) tag += `<span class="tag host">หัวห้อง</span>`;
   if (p.bot) tag += `<span class="tag">บอท</span>`;
+  if (p.lover) tag += `<span class="tag love">คู่รัก</span>`;
+  if (p.silenced && p.alive) tag += `<span class="tag">ถูกสาปให้เงียบ</span>`;
 
   const badge = o.badges?.[p.id] ? `<span class="badge ${o.badges[p.id].ok ? 'ok' : ''}">${esc(o.badges[p.id].text)}</span>` : '';
   const kick = o.kick && !isMe ? `<button class="kick" data-do="kick" data-id="${p.id}" aria-label="เชิญ ${esc(p.name)} ออกจากห้อง" title="เชิญออกจากห้อง">✕</button>` : '';
-  const pressed = selectable ? `aria-pressed="${S.sel === p.id}" data-do="pick" data-id="${p.id}"` : '';
+  const on = o.multi ? S.pair.includes(p.id) : S.sel === p.id;
+  const pressed = selectable ? `aria-pressed="${on}" data-do="pick" data-id="${p.id}"` : '';
 
   return `
   <${el} class="${cls}" ${p.role && !hideOwn ? `data-role="${p.role}"` : ''} ${pressed}>
@@ -344,6 +427,7 @@ function board(v, o = {}) {
 function seerBadges(v) {
   const b = {};
   for (const r of v.me.seerResults || []) b[r.id] = r.isWolf ? { text: 'หมาป่า' } : { text: 'ไม่ใช่หมาป่า', ok: true };
+  for (const r of v.me.sorcResults || []) b[r.id] = r.isSeer ? { text: 'ผู้หยั่งรู้' } : { text: 'ไม่ใช่ผู้หยั่งรู้', ok: true };
   return b;
 }
 
@@ -477,11 +561,12 @@ function renderLobby(v) {
   const roleRow = (k) => {
     const count = k === 'villager' ? villagers : s.roles[k];
     const max = k === 'werewolf' ? 6 : 1;
+    if (k !== 'villager' && !host && !count) return '';
     const control =
       host && k !== 'villager'
         ? `<div class="stepper"><button data-do="role" data-role="${k}" data-d="-1" aria-label="ลด${ROLE[k].name}" ${count <= 0 ? 'disabled' : ''}>−</button><output>${count}</output><button data-do="role" data-role="${k}" data-d="1" aria-label="เพิ่ม${ROLE[k].name}" ${count >= max ? 'disabled' : ''}>+</button></div>`
         : `<div class="stepper"><output>${count}</output></div>`;
-    return `<div class="setup-row">${glyph(k)}<div><b>${ROLE[k].name}</b><p class="small muted">${k === 'villager' ? 'คำนวณจากจำนวนผู้เล่นที่เหลือ' : ROLE[k].desc}</p></div>${control}</div>`;
+    return `<div class="setup-row">${glyph(k)}<div><b>${ROLE[k].name}</b><p class="small muted">${ROLE_SHORT[k]}</p></div>${control}</div>`;
   };
 
   $app.innerHTML = `
@@ -516,7 +601,7 @@ function renderLobby(v) {
       <h2>ตั้งค่าเกม</h2>
       ${host ? `<button class="btn ghost" data-do="auto" ${s.autoRoles ? 'disabled' : ''}>${s.autoRoles ? 'จัดตามจำนวนคนอยู่' : 'จัดบทบาทอัตโนมัติ'}</button>` : ''}
     </div>
-    <div class="setup">${['werewolf', 'seer', 'bodyguard', 'witch', 'hunter', 'villager'].map(roleRow).join('')}</div>
+    ${ROLE_GROUPS.map(([team, keys]) => `<div class="setup"><span class="eyebrow">${team}</span>${keys.map(roleRow).join('')}</div>`).join('')}
     <div class="row spread"><label for="dayTime">เวลาถกเถียงกลางวัน</label>${sel('dayTime', s.dayTime, [60, 120, 180, 240, 300, 420], 'min')}</div>
     <div class="row spread"><label for="voteTime">เวลาโหวต</label>${sel('voteTime', s.voteTime, [30, 45, 60, 90, 120], 'sec')}</div>
     <label class="toggle"><input type="checkbox" id="revealOnDeath" ${s.revealOnDeath ? 'checked' : ''} ${host ? '' : 'disabled'}> เปิดเผยบทบาทเมื่อผู้เล่นตาย</label>
@@ -568,14 +653,28 @@ function phasePanel(v) {
   return '';
 }
 
+// Things only this player knows: packmates, a lover, a curse.
+function myNotes(v) {
+  const notes = [];
+  const wolves = v.players.filter((p) => p.role === 'werewolf' && p.id !== v.me.id).map((p) => `<b>${esc(p.name)}</b>`);
+  if (v.me.wasCursed) notes.push(['bad', `คุณถูกหมาป่ากัดและกลายเป็น<b>มนุษย์หมาป่า</b>แล้ว${wolves.length ? ` เพื่อนหมาป่า: ${wolves.join(', ')}` : ''}`]);
+  else if (v.me.role === 'werewolf') notes.push(['bad', wolves.length ? `เพื่อนหมาป่าของคุณ: ${wolves.join(', ')}` : 'คุณเป็นหมาป่าตัวเดียวในเกมนี้']);
+  if (v.me.role === 'minion') notes.push(['bad', wolves.length ? `หมาป่าที่คุณต้องช่วย: ${wolves.join(', ')}` : 'ตอนนี้ไม่มีหมาป่าเหลือแล้ว']);
+  if (v.me.lover && v.me.alive) {
+    const other = v.me.lover === v.me.id ? null : nameOf(v, v.me.lover);
+    notes.push(['love', other ? `คุณกับ <b>${esc(other)}</b> เป็นคู่รัก ถ้าคนหนึ่งตาย อีกคนจะตรอมใจตายตาม` : 'คุณเป็นคู่รัก']);
+  }
+  if (v.players.find((p) => p.id === v.me.id)?.silenced && v.me.alive && v.room.phase !== 'night') notes.push(['bad', 'หมอผีสาปให้คุณพูดไม่ได้วันนี้ แต่ยังโหวตได้']);
+  return notes.map(([cls, html]) => `<p class="note ${cls}">${html}</p>`).join('');
+}
+
 function revealPanel(v) {
   const r = v.reveal;
-  const mates = v.players.filter((p) => p.role === 'werewolf' && p.id !== v.me.id);
   return `
   <section class="panel ${fx()}">
     <p class="instruction">แตะไพ่เพื่อเปิดดูบทบาท แล้วแตะอีกครั้งเพื่อคว่ำ</p>
     ${roleCard(v.me.role, S.flipped)}
-    ${v.me.role === 'werewolf' && S.flipped ? `<p class="note bad">${mates.length ? `เพื่อนหมาป่าของคุณ: <b>${mates.map((p) => esc(p.name)).join(', ')}</b>` : 'คุณเป็นหมาป่าตัวเดียวในเกมนี้'}</p>` : ''}
+    ${S.flipped ? myNotes(v) : ''}
     <button class="btn primary block" data-do="ready" ${r.iAmReady ? 'disabled' : ''}>${r.iAmReady ? 'พร้อมแล้ว รอคนอื่น…' : 'จำบทบาทได้แล้ว พร้อม'}</button>
     <p class="muted small">พร้อมแล้ว ${r.readyCount} จาก ${r.total} คน · ในเกมนี้มี</p>
     ${setupChips(v)}
@@ -584,8 +683,8 @@ function revealPanel(v) {
   <section class="panel">${board(v)}</section>`;
 }
 
-function confirmRow(label, extra = '') {
-  return `<div class="row"><button class="btn primary" data-do="confirm" ${S.sel ? '' : 'disabled'}>${label}</button>${extra}</div>`;
+function confirmRow(label, extra = '', ready = !!S.sel) {
+  return `<div class="row"><button class="btn primary" data-do="confirm" ${ready ? '' : 'disabled'}>${label}</button>${extra}</div>`;
 }
 
 function nightPanel(v) {
@@ -615,6 +714,7 @@ function nightPanel(v) {
   const a = n.action;
   const waiting = `<p class="muted small">ยังรออีก ${n.waiting} คน</p>`;
   const lastNightResult = (v.me.seerResults || []).find((r) => r.night === v.room.day);
+  const lastSorc = (v.me.sorcResults || []).find((r) => r.night === v.room.day);
 
   if (a.done && a.kind !== 'wolf') {
     let extra = '';
@@ -624,13 +724,19 @@ function nightPanel(v) {
         ? `<p class="note bad">${t} คือ <b>มนุษย์หมาป่า</b></p>`
         : `<p class="note good">${t} <b>ไม่ใช่</b> มนุษย์หมาป่า</p>`;
     }
+    if (a.kind === 'sorceress' && lastSorc) {
+      const t = esc(nameOf(v, lastSorc.id));
+      extra = lastSorc.isSeer ? `<p class="note bad">เจอแล้ว! ${t} คือ <b>ผู้หยั่งรู้</b></p>` : `<p class="note good">${t} <b>ไม่ใช่</b> ผู้หยั่งรู้</p>`;
+    }
+    if (a.kind === 'cupid' && a.chosenPair) extra = `<p class="note love">คู่รักคือ <b>${a.chosenPair.map((id) => esc(nameOf(v, id))).join('</b> กับ <b>')}</b></p>`;
     return `
     <section class="panel ${fx()}">
+      ${myNotes(v)}
       ${extra}
       ${sleepPanel('หลับตาได้แล้ว', `วางมือถือคว่ำไว้ · ยังรออีก ${n.waiting} คน`)}
       ${hostAdvance(v, 'ข้ามคนที่ยังไม่เลือก')}
     </section>
-    ${a.kind === 'seer' ? `<section class="panel">${board(v, { badges: seerBadges(v) })}</section>` : ''}`;
+    ${['seer', 'sorceress', 'cupid'].includes(a.kind) ? `<section class="panel">${board(v, { badges: seerBadges(v) })}</section>` : ''}`;
   }
 
   const texts = {
@@ -638,6 +744,9 @@ function nightPanel(v) {
     seer: ['ผู้หยั่งรู้', 'เลือกคนที่จะส่อง', 'ส่องได้คืนละ 1 คน ยืนยันแล้วเปลี่ยนไม่ได้'],
     guard: ['บอดี้การ์ด', 'เลือกคนที่จะปกป้อง', n.lastGuard ? `คืนนี้ปกป้อง ${esc(nameOf(v, n.lastGuard))} ซ้ำไม่ได้` : 'ปกป้องตัวเองก็ได้'],
     dummy: ['กลางคืน', 'แตะเลือกคนที่คุณสงสัย', 'ไม่มีผลต่อเกม ทุกคนแตะพร้อมกันเพื่อไม่ให้ใครรู้ว่าใครมีพลัง'],
+    cupid: ['คิวปิด', 'เลือกคู่รัก 2 คน', 'ถ้าคนหนึ่งตาย อีกคนจะตรอมใจตายตาม เลือกตัวเองก็ได้ ยืนยันแล้วเปลี่ยนไม่ได้'],
+    silence: ['หมอผี', 'เลือกคนที่จะสาปให้เงียบ', 'คนนั้นจะพิมพ์แชทไม่ได้ตลอดวันพรุ่งนี้ แต่ยังโหวตได้'],
+    sorceress: ['แม่มดสายมืด', 'ตามหาผู้หยั่งรู้', 'เลือก 1 คน รู้ผลทันทีว่าใช่ผู้หยั่งรู้หรือไม่ ยืนยันแล้วเปลี่ยนไม่ได้'],
   }[a.kind];
 
   const badges = a.kind === 'seer' ? seerBadges(v) : {};
@@ -647,18 +756,28 @@ function nightPanel(v) {
     for (const [t, c] of Object.entries(counts)) badges[t] = { text: `เพื่อนเลือก ${c}` };
   }
 
-  const confirmLabel = { wolf: a.done ? 'เปลี่ยนเป็นคนนี้' : 'ยืนยันเหยื่อ', seer: 'ส่องคนนี้', guard: 'ปกป้องคนนี้', dummy: 'เลือกแล้ว' }[a.kind];
+  const confirmLabel = {
+    wolf: a.done ? 'เปลี่ยนเป็นคนนี้' : 'ยืนยันเหยื่อ',
+    seer: 'ส่องคนนี้',
+    guard: 'ปกป้องคนนี้',
+    dummy: 'เลือกแล้ว',
+    cupid: `จับคู่ (${S.pair.length}/2)`,
+    silence: 'สาปคนนี้',
+    sorceress: 'ตามหาคนนี้',
+  }[a.kind];
+  const multi = a.pick === 2;
   return `
   <section class="panel ${fx()}" data-role="${v.me.role}">
+    ${myNotes(v)}
     <span class="eyebrow">${texts[0]}</span>
     <p class="instruction">${texts[1]}</p>
     <p class="muted small">${texts[2]}</p>
     ${a.kind === 'wolf' && a.done ? `<p class="note bad">คุณเลือก <b>${esc(nameOf(v, a.chosen))}</b> แล้ว เปลี่ยนใจได้จนกว่าทุกคนจะเลือกเสร็จ</p>` : ''}
-    ${confirmRow(confirmLabel, a.kind === 'dummy' ? '<button class="btn ghost" data-do="skip-night">ข้าม</button>' : '')}
+    ${confirmRow(confirmLabel, a.kind === 'dummy' ? '<button class="btn ghost" data-do="skip-night">ข้าม</button>' : '', multi ? S.pair.length === 2 : !!S.sel)}
     ${waiting}
     ${hostAdvance(v, 'ข้ามคนที่ยังไม่เลือก')}
   </section>
-  <section class="panel">${board(v, { selectable: new Set(a.options), badges })}</section>`;
+  <section class="panel">${board(v, { selectable: new Set(a.options), badges, multi })}</section>`;
 }
 
 function ghostNight(v) {
@@ -683,7 +802,8 @@ function deathsNote(v) {
   };
   const lines = a.deaths.length ? `เมื่อคืน ${a.deaths.map(who).join(' และ ')} ถูกพบเป็นศพ` : 'เมื่อคืนสงบสุข ไม่มีใครตาย';
   const shot = a.hunterShot ? `<br>นายพรานยิง ${who(a.hunterShot)} ตามไปด้วย` : '';
-  return `<p class="note ${a.deaths.length ? 'bad' : 'good'}">${lines}${shot}</p>`;
+  const hush = a.silenced ? `<br>หมอผีสาปให้ <b>${esc(nameOf(v, a.silenced))}</b> พูดไม่ได้วันนี้` : '';
+  return `<p class="note ${a.deaths.length ? 'bad' : 'good'}">${lines}${shot}${hush}</p>`;
 }
 
 function hunterPanel(v) {
@@ -712,12 +832,13 @@ function dayPanel(v) {
   return `
   <section class="panel ${fx()}">
     ${deathsNote(v)}
+    ${myNotes(v)}
     <p class="instruction">${v.me.alive ? 'ทุกคนลืมตา ถกเถียงกันว่าใครคือหมาป่า' : 'คุณตายแล้ว ฟังได้แต่ห้ามพูด'}</p>
     <p class="muted small">หมดเวลาแล้วจะเข้าสู่การโหวตอัตโนมัติ · ในเกมนี้มี</p>
     ${setupChips(v)}
     ${hostAdvance(v, 'เริ่มโหวตเลย')}
   </section>
-  <section class="panel">${board(v, { badges: v.me.role === 'seer' ? seerBadges(v) : {} })}</section>`;
+  <section class="panel">${board(v, { badges: seerBadges(v) })}</section>`;
 }
 
 function votePanel(v) {
@@ -736,16 +857,18 @@ function votePanel(v) {
     ${progress}
     ${hostAdvance(v, 'ปิดโหวตเลย')}
   </section>
-  <section class="panel">${board(v, { selectable: opts, badges: v.me.role === 'seer' ? seerBadges(v) : {} })}</section>`;
+  <section class="panel">${board(v, { selectable: opts, badges: seerBadges(v) })}</section>`;
 }
 
 function tallyHtml(v) {
   const vd = v.verdict;
-  const total = Object.keys(vd.votes).length || 1;
+  const total = Object.values(vd.tally).reduce((a, b) => a + b, 0) || 1;
   const rows = Object.entries(vd.tally).sort((a, b) => b[1] - a[1]);
   return `<div class="tally">${rows
     .map(([t, c]) => {
-      const voters = Object.entries(vd.votes).filter(([, x]) => x === t).map(([who]) => esc(nameOf(v, who)));
+      const voters = Object.entries(vd.votes)
+        .filter(([, x]) => x === t)
+        .map(([who]) => esc(nameOf(v, who)) + (playerOf(v, who)?.role === 'mayor' ? ' (×2)' : ''));
       return `<div class="tally-row ${t === vd.eliminated ? 'out' : ''}">
         <div class="row spread"><b>${t === 'skip' ? 'งดออกเสียง' : esc(nameOf(v, t))}</b><span class="muted small">${c} เสียง</span></div>
         <div class="bar"><i style="width:${(c / total) * 100}%"></i></div>
@@ -758,9 +881,12 @@ function tallyHtml(v) {
 function verdictPanel(v) {
   const vd = v.verdict;
   const out = vd.eliminated && playerOf(v, vd.eliminated);
-  const result = out
-    ? `<p class="note bad">หมู่บ้านลงมติประหาร <b>${esc(out.name)}</b>${out.role ? ` · บทบาท: <b>${ROLE[out.role].name}</b>` : ''}</p>`
-    : `<p class="note good">${vd.tie ? 'คะแนนเสมอกัน' : 'เสียงส่วนใหญ่งดออกเสียง'} วันนี้ไม่มีใครถูกประหาร</p>`;
+  const lovers = (vd.killed || []).filter((id) => id !== vd.eliminated).map((id) => `<br><b>${esc(nameOf(v, id))}</b> ตรอมใจตายตามคนรัก`).join('');
+  let result;
+  if (out && vd.princeSaved) result = `<p class="note good">หมู่บ้านลงมติประหาร <b>${esc(out.name)}</b> แต่เขาเปิดเผยว่าเป็น<b>เจ้าชาย</b> จึงรอดชีวิต</p>`;
+  else if (out && vd.tannerWin) result = `<p class="note bad">หมู่บ้านประหาร <b>${esc(out.name)}</b> ซึ่งเป็น<b>คนเบื่อโลก</b> เขาชนะคนเดียว!</p>`;
+  else if (out) result = `<p class="note bad">หมู่บ้านลงมติประหาร <b>${esc(out.name)}</b>${out.role ? ` · บทบาท: <b>${ROLE[out.role].name}</b>` : ''}${lovers}</p>`;
+  else result = `<p class="note good">${vd.tie ? 'คะแนนเสมอกัน' : 'เสียงส่วนใหญ่งดออกเสียง'} วันนี้ไม่มีใครถูกประหาร</p>`;
   return `
   <section class="panel ${fx()}">
     ${result}
@@ -770,14 +896,22 @@ function verdictPanel(v) {
   <section class="panel">${board(v)}</section>`;
 }
 
+const WIN = {
+  village: ['หมู่บ้านปลอดภัยแล้ว', 'ฝ่ายหมู่บ้านชนะ'],
+  wolf: ['หมาป่าครองหมู่บ้าน', 'ฝ่ายหมาป่าชนะ (รวมสมุนหมาป่าและแม่มดสายมืด)'],
+  tanner: ['คนเบื่อโลกสมใจ', 'คนเบื่อโลกชนะคนเดียว'],
+};
+
 function endPanel(v) {
   const w = v.room.winner;
+  const won = v.players.filter((p) => (w === 'wolf' ? WOLF_TEAM.includes(p.role) : w === 'tanner' ? p.role === 'tanner' : !WOLF_TEAM.includes(p.role) && p.role !== 'tanner'));
   return `
   <section class="panel ${fx()}">
     <div class="winner ${w}">
       <span class="eyebrow">ผลการแข่งขัน</span>
-      <h2>${w === 'wolf' ? 'หมาป่าครองหมู่บ้าน' : 'หมู่บ้านปลอดภัยแล้ว'}</h2>
-      <p class="muted">${w === 'wolf' ? 'ฝ่ายหมาป่าชนะ' : 'ฝ่ายหมู่บ้านชนะ'} · เล่นไป ${v.room.day} วัน</p>
+      <h2>${WIN[w][0]}</h2>
+      <p class="muted">${WIN[w][1]} · เล่นไป ${v.room.day} วัน</p>
+      <p class="small">ผู้ชนะ: ${won.map((p) => `<b>${esc(p.name)}</b>`).join(', ')}</p>
     </div>
     ${v.me.isHost ? '<button class="btn primary block" data-do="restart">เล่นอีกรอบ (กลับห้องรอ)</button>' : '<p class="muted" style="text-align:center">รอหัวห้องเริ่มรอบใหม่…</p>'}
   </section>
@@ -862,10 +996,18 @@ $app.addEventListener('click', (e) => {
       return render();
     case 'ready':
       return act('ready');
-    case 'pick':
-      S.sel = S.sel === b.dataset.id ? null : b.dataset.id;
+    case 'pick': {
+      const id = b.dataset.id;
+      if (v.night?.action?.pick === 2 && v.night.step === 'main') {
+        // Cupid picks two: tapping a third replaces the oldest choice.
+        S.pair = S.pair.includes(id) ? S.pair.filter((x) => x !== id) : [...S.pair, id].slice(-2);
+      } else {
+        S.sel = S.sel === id ? null : id;
+      }
       return render();
+    }
     case 'confirm':
+      if (v.night?.action?.pick === 2 && v.room.phase === 'night') return S.pair.length === 2 && act('night', { targets: S.pair });
       if (!S.sel) return;
       if (v.room.phase === 'night') return act('night', { target: S.sel });
       if (v.room.phase === 'vote') return act('vote', { target: S.sel });
@@ -1051,10 +1193,11 @@ function updateChat(v) {
     if (stick || $chat.hidden) $chatList.scrollTop = $chatList.scrollHeight;
   }
   const ch = v.chatChannel;
-  $chatWhere.textContent = ch ? `คุยใน: ${CHANNEL[ch].label}` : 'กลางคืน หมู่บ้านหลับอยู่';
+  const hushed = !ch && v.room.phase !== 'night';
+  $chatWhere.textContent = ch ? `คุยใน: ${CHANNEL[ch].label}` : hushed ? 'หมอผีสาปให้คุณพูดไม่ได้วันนี้' : 'กลางคืน หมู่บ้านหลับอยู่';
   $chatWhere.className = `ch-pill ${ch ? 'ch-' + ch : ''}`;
   $chatInput.disabled = !ch;
-  $chatInput.placeholder = ch ? CHANNEL[ch].hint : 'คุยได้อีกครั้งตอนเช้า';
+  $chatInput.placeholder = ch ? CHANNEL[ch].hint : hushed ? 'พิมพ์ได้อีกครั้งพรุ่งนี้' : 'คุยได้อีกครั้งตอนเช้า';
   $chatForm.querySelector('button').disabled = !ch;
 
 }

@@ -16,6 +16,7 @@
   --hunter: #e6aa48;
   --village: #b9c3e6;
   --good: #6fd19b;
+  --love: #f07aa8;
 
   --f-display: "Srisakdi", "Chakra Petch", serif;
   --f-body: "IBM Plex Sans Thai", "Noto Sans Thai", system-ui, sans-serif;
@@ -41,6 +42,7 @@ body[data-time="day"] {
   --hunter: #a8660b;
   --village: #4c5a86;
   --good: #23824e;
+  --love: #c23b72;
   color-scheme: light;
 }
 
@@ -180,7 +182,13 @@ details.rules summary { cursor: pointer; font-weight: 600; }
 [data-role="bodyguard"] { --rc: var(--guard); }
 [data-role="witch"] { --rc: var(--witch); }
 [data-role="hunter"] { --rc: var(--hunter); }
-[data-role="villager"] { --rc: var(--village); }
+[data-role="villager"], [data-role="lycan"] { --rc: var(--village); }
+[data-role="minion"], [data-role="sorceress"] { --rc: var(--blood); }
+[data-role="cupid"] { --rc: var(--love); }
+[data-role="prince"], [data-role="mayor"] { --rc: var(--hunter); }
+[data-role="spellcaster"] { --rc: var(--guard); }
+[data-role="cursed"] { --rc: var(--witch); }
+[data-role="tanner"] { --rc: var(--muted); }
 
 /* ---------- top bar ---------- */
 .topbar {
@@ -215,8 +223,9 @@ details.rules summary { cursor: pointer; font-weight: 600; }
 .setup { display: grid; gap: 8px; }
 .setup-row {
   display: grid; grid-template-columns: 36px 1fr auto; gap: 12px; align-items: center;
-  padding: 8px 0; border-bottom: 1px dashed var(--line);
+  padding: 6px 0; border-bottom: 1px dashed var(--line);
 }
+.setup-row p { line-height: 1.35; }
 .setup-row:last-child { border-bottom: 0; }
 .stepper { display: flex; align-items: center; gap: 4px; }
 .stepper button { width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--line); background: var(--bg); font-weight: 600; }
@@ -281,6 +290,7 @@ button.token:active { transform: scale(.96); }
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
 }
 .note.bad { background: color-mix(in srgb, var(--blood) 12%, transparent); border-color: color-mix(in srgb, var(--blood) 45%, transparent); }
+.note.love { background: color-mix(in srgb, var(--love) 14%, transparent); border-color: color-mix(in srgb, var(--love) 45%, transparent); }
 .note.good { background: color-mix(in srgb, var(--good) 12%, transparent); border-color: color-mix(in srgb, var(--good) 45%, transparent); }
 
 .sleep { display: grid; justify-items: center; text-align: center; gap: 10px; padding: 26px 0 8px; }
@@ -338,6 +348,9 @@ button.token:active { transform: scale(.96); }
 .winner h2 { font-family: var(--f-display); font-size: clamp(38px, 10vw, 58px); line-height: 1.1; }
 .winner.wolf h2 { color: var(--blood); }
 .winner.village h2 { color: var(--good); }
+.winner.tanner h2 { color: var(--hunter); }
+.token .tag.love { color: var(--love); font-weight: 600; }
+.setup + .setup { margin-top: 6px; }
 
 /* log */
 .log { display: grid; gap: 6px; max-height: 260px; overflow: auto; font-size: 14px; }
@@ -391,7 +404,7 @@ button.token:active { transform: scale(.96); }
 /* ---------- chat ----------
    Always docked open so everyone can follow the talk: a bottom panel on
    phones, a right-hand column on wide screens. */
-:root { --dock-h: min(42dvh, 360px); }
+:root { --dock-h: min(36dvh, 320px); }
 #app { padding-bottom: max(96px, calc(env(safe-area-inset-bottom) + 80px)); }
 body.chat-open #app { padding-bottom: calc(var(--dock-h) + 24px); }
 @media (min-width: 1100px) {

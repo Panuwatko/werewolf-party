@@ -15,15 +15,26 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIN_PLAYERS = 5;
 const MAX_PLAYERS = 16;
 
+// Roles from Ultimate Werewolf / Werewolves of Miller's Hollow that an
+// automatic moderator can run. `max` caps how many the host can deal.
 const ROLES = {
-  werewolf: { team: 'wolf' },
-  seer: { team: 'village' },
-  bodyguard: { team: 'village' },
-  witch: { team: 'village' },
-  hunter: { team: 'village' },
+  werewolf: { team: 'wolf', max: 6 },
+  minion: { team: 'wolf', max: 1 },
+  sorceress: { team: 'wolf', max: 1 },
+  seer: { team: 'village', max: 1 },
+  bodyguard: { team: 'village', max: 1 },
+  witch: { team: 'village', max: 1 },
+  hunter: { team: 'village', max: 1 },
+  cupid: { team: 'village', max: 1 },
+  prince: { team: 'village', max: 1 },
+  mayor: { team: 'village', max: 1 },
+  spellcaster: { team: 'village', max: 1 },
+  lycan: { team: 'village', max: 1 },
+  cursed: { team: 'village', max: 1 },
   villager: { team: 'village' },
+  tanner: { team: 'tanner', max: 1 },
 };
-const SPECIALS = ['werewolf', 'seer', 'bodyguard', 'witch', 'hunter'];
+const SPECIALS = Object.keys(ROLES).filter((k) => k !== 'villager');
 
 const rooms = new Map();
 
@@ -61,19 +72,23 @@ function lanUrls() {
 
 // Ultimate Werewolf-style suggestion: ~1 wolf per 4 players, specials as the table grows.
 function suggestedRoles(n) {
-  return {
+  const roles = Object.fromEntries(SPECIALS.map((k) => [k, 0]));
+  return Object.assign(roles, {
     werewolf: Math.max(1, Math.floor((n + 2) / 4)),
     seer: 1,
     bodyguard: n >= 6 ? 1 : 0,
     hunter: n >= 7 ? 1 : 0,
     witch: n >= 8 ? 1 : 0,
-  };
+    cupid: n >= 9 ? 1 : 0,
+    mayor: n >= 10 ? 1 : 0,
+    minion: n >= 11 ? 1 : 0,
+  });
 }
 
 function setupProblem(room) {
   const n = room.players.length;
   const r = room.settings.roles;
-  const specials = SPECIALS.reduce((s, k) => s + r[k], 0);
+  const specials = SPECIALS.reduce((s, k) => s + (r[k] || 0), 0);
   if (n < MIN_PLAYERS) return `ต้องมีผู้เล่นอย่างน้อย ${MIN_PLAYERS} คน`;
   if (r.werewolf < 1) return 'ต้องมีมนุษย์หมาป่าอย่างน้อย 1 ตัว';
   if (r.werewolf * 2 >= n) return 'หมาป่าต้องน้อยกว่าครึ่งหนึ่งของผู้เล่น';
@@ -179,15 +194,20 @@ function setPhase(room, phase, seconds, onTimeout) {
 function startGame(room) {
   const n = room.players.length;
   const deck = [];
-  for (const k of SPECIALS) for (let i = 0; i < room.settings.roles[k]; i++) deck.push(k);
+  for (const k of SPECIALS) for (let i = 0; i < (room.settings.roles[k] || 0); i++) deck.push(k);
   while (deck.length < n) deck.push('villager');
   shuffle(deck);
   room.players.forEach((p, i) => {
     p.role = deck[i];
     p.alive = true;
-    p.revealed = false;
+    p.revealed = p.role === 'mayor'; // the headman is known to the whole village
     p.seerResults = [];
+    p.sorcResults = [];
+    p.princeUsed = false;
+    p.wasCursed = false;
   });
+  room.lovers = null;
+  room.silenced = null;
   room.gameNo = (room.gameNo || 0) + 1;
   room.rolesInGame = deck.reduce((m, r) => ((m[r] = (m[r] || 0) + 1), m), {});
   room.day = 0;
@@ -207,6 +227,7 @@ function startNight(room) {
   room.day += 1;
   room.night = { step: 'main', acts: {}, wolfTarget: null, witchAct: null };
   room.announcement = null;
+  room.silenced = null;
   room.verdict = null;
   setPhase(room, 'night');
 }
@@ -223,24 +244,39 @@ function nightActionFor(room, p) {
       return { kind: 'seer', options: others };
     case 'bodyguard':
       return { kind: 'guard', options: alivePlayers(room).filter((x) => x.id !== room.lastGuard).map((x) => x.id) };
+    case 'cupid':
+      if (room.day === 1 && !room.lovers) return { kind: 'cupid', pick: 2, options: alivePlayers(room).map((x) => x.id) };
+      return { kind: 'dummy', options: others };
+    case 'spellcaster':
+      return { kind: 'silence', options: others };
+    case 'sorceress':
+      return { kind: 'sorceress', options: others };
     default:
       return { kind: 'dummy', options: others };
   }
 }
 
-function nightAct(room, p, target) {
+// The seer sees the lycan as a wolf; the minion and sorceress pass as villagers.
+const looksLikeWolf = (p) => p.role === 'werewolf' || p.role === 'lycan';
+
+function nightAct(room, p, target, targets) {
   const n = room.night;
   if (n.step !== 'main') throw new Error('ตอนนี้ยังไม่ใช่ตาของคุณ');
   const action = nightActionFor(room, p);
   if (!action) throw new Error('คุณไม่ได้อยู่ในเกมแล้ว');
-  if (target !== null && !action.options.includes(target)) throw new Error('เลือกเป้าหมายนี้ไม่ได้');
-  if (action.kind === 'seer') {
-    if (n.acts[p.id]) throw new Error('คุณใช้พลังคืนนี้ไปแล้ว');
-    if (target) {
-      const t = byId(room, target);
-      p.seerResults.push({ night: room.day, id: t.id, isWolf: t.role === 'werewolf' });
-    }
+  const locked = ['seer', 'sorceress', 'cupid'].includes(action.kind);
+  if (locked && n.acts[p.id]) throw new Error('คุณใช้พลังคืนนี้ไปแล้ว');
+  if (action.kind === 'cupid') {
+    const pair = [...new Set(Array.isArray(targets) ? targets : [])];
+    if (pair.length !== 2 || !pair.every((id) => action.options.includes(id))) throw new Error('เลือกคู่รัก 2 คน');
+    room.lovers = pair;
+    n.acts[p.id] = { targets: pair };
+    return maybeFinishMainNight(room);
   }
+  if (target !== null && !action.options.includes(target)) throw new Error('เลือกเป้าหมายนี้ไม่ได้');
+  const t = target && byId(room, target);
+  if (action.kind === 'seer' && t) p.seerResults.push({ night: room.day, id: t.id, isWolf: looksLikeWolf(t) });
+  if (action.kind === 'sorceress' && t) p.sorcResults.push({ night: room.day, id: t.id, isSeer: t.role === 'seer' });
   n.acts[p.id] = { target };
   maybeFinishMainNight(room);
 }
@@ -260,6 +296,8 @@ function maybeFinishMainNight(room, force = false) {
   n.wolfTarget = max > 0 ? pick(top) : null;
   const guard = alivePlayers(room).find((p) => p.role === 'bodyguard');
   n.guardTarget = guard ? n.acts[guard.id]?.target || null : null;
+  const caster = alivePlayers(room).find((p) => p.role === 'spellcaster');
+  n.silence = caster ? n.acts[caster.id]?.target || null : null;
 
   // The moderator always calls the witch if she was dealt, alive or not,
   // so the pause itself gives nothing away.
@@ -294,28 +332,49 @@ function witchAct(room, p, { save, poison }) {
 function resolveNight(room) {
   const n = room.night;
   const deaths = [];
-  const target = n.wolfTarget;
+  const target = n.wolfTarget && byId(room, n.wolfTarget);
   const saved = n.witchAct?.save;
-  if (target && target !== n.guardTarget && !saved) deaths.push(target);
+  if (target && target.id !== n.guardTarget && !saved) {
+    // The cursed don't die from a bite: they wake up as a werewolf.
+    if (target.role === 'cursed') {
+      target.role = 'werewolf';
+      target.wasCursed = true;
+    } else {
+      deaths.push(target.id);
+    }
+  }
   if (n.witchAct?.poison && !deaths.includes(n.witchAct.poison)) deaths.push(n.witchAct.poison);
   room.lastGuard = n.guardTarget;
 
-  room.announcement = { kind: 'dawn', night: room.day, deaths };
+  room.announcement = { kind: 'dawn', night: room.day, deaths: [] };
   if (deaths.length === 0) log(room, `คืนที่ ${room.day}: ไม่มีใครตาย`, 'calm');
   for (const id of deaths) log(room, `คืนที่ ${room.day}: ${byId(room, id).name} ถูกพบเป็นศพ`, 'death');
+  const silenced = n.silence && byId(room, n.silence);
+  room.silenced = silenced && !deaths.includes(silenced.id) ? silenced.id : null;
+  room.announcement.silenced = room.silenced;
+  if (room.silenced) log(room, `หมอผีสาปให้ ${silenced.name} พูดไม่ได้ตลอดวันนี้`, 'calm');
   processDeaths(room, deaths, 'day');
 }
 
+// Kills a player and, through Cupid's bond, their lover. Returns everyone who died.
 function kill(room, id) {
   const p = byId(room, id);
-  if (!p || !p.alive) return;
+  if (!p || !p.alive) return [];
   p.alive = false;
   if (room.settings.revealOnDeath) p.revealed = true;
+  const died = [id];
+  const partner = room.lovers?.includes(id) && byId(room, room.lovers.find((x) => x !== id));
+  if (partner?.alive) {
+    log(room, `${partner.name} ตรอมใจตายตามคนรัก`, 'death');
+    died.push(...kill(room, partner.id));
+  }
+  return died;
 }
 
 function processDeaths(room, ids, next) {
-  ids.forEach((id) => kill(room, id));
-  const hunter = ids.map((id) => byId(room, id)).find((p) => p.role === 'hunter');
+  const died = ids.flatMap((id) => kill(room, id));
+  if (room.announcement?.kind === 'dawn' && next === 'day') room.announcement.deaths = died;
+  const hunter = died.map((id) => byId(room, id)).find((p) => p.role === 'hunter');
   if (hunter) {
     room.hunter = { id: hunter.id, next };
     setPhase(room, 'hunter', 60, () => hunterShoot(room, hunter, null));
@@ -330,9 +389,9 @@ function hunterShoot(room, p, target) {
   if (target) {
     const t = byId(room, target);
     if (!t || !t.alive || t.id === p.id) throw new Error('เลือกเป้าหมายนี้ไม่ได้');
+    log(room, `${p.name} นายพรานยิง ${t.name} ก่อนสิ้นใจ`, 'death');
     kill(room, t.id);
     room.hunter.shot = t.id;
-    log(room, `${p.name} นายพรานยิง ${t.name} ก่อนสิ้นใจ`, 'death');
     if (room.announcement) room.announcement.hunterShot = t.id;
   } else {
     log(room, `${p.name} นายพรานไม่ยิงใคร`, 'calm');
@@ -376,16 +435,26 @@ function castVote(room, p, target) {
 }
 
 // Most votes is eliminated; a tie (or "skip" leading) means nobody dies today.
+// The headman's vote counts twice.
 function tallyVotes(room) {
   const tally = {};
-  for (const v of Object.values(room.votes)) tally[v] = (tally[v] || 0) + 1;
+  for (const [voter, v] of Object.entries(room.votes)) tally[v] = (tally[v] || 0) + (byId(room, voter)?.role === 'mayor' ? 2 : 1);
   const max = Math.max(0, ...Object.values(tally));
   const top = Object.keys(tally).filter((k) => tally[k] === max);
   const out = max > 0 && top.length === 1 && top[0] !== 'skip' ? top[0] : null;
-  room.verdict = { day: room.day, votes: { ...room.votes }, tally, eliminated: out, tie: top.length > 1 };
+  room.verdict = { day: room.day, votes: { ...room.votes }, tally, eliminated: out, tie: top.length > 1, killed: [] };
   if (out) {
-    kill(room, out);
-    log(room, `วันที่ ${room.day}: หมู่บ้านลงมติประหาร ${byId(room, out).name} (${max} เสียง)`, 'death');
+    const t = byId(room, out);
+    log(room, `วันที่ ${room.day}: หมู่บ้านลงมติประหาร ${t.name} (${max} เสียง)`, 'death');
+    if (t.role === 'prince' && !t.princeUsed) {
+      t.princeUsed = true;
+      t.revealed = true;
+      room.verdict.princeSaved = true;
+      log(room, `${t.name} เปิดเผยว่าเป็นเจ้าชาย จึงรอดจากการประหาร`, 'calm');
+    } else {
+      room.verdict.killed = kill(room, out);
+      if (t.role === 'tanner') room.verdict.tannerWin = true;
+    }
   } else {
     log(room, `วันที่ ${room.day}: ${top.length > 1 ? 'คะแนนเสมอ' : 'หมู่บ้านไม่ประหารใคร'} วันนี้ไม่มีใครถูกประหาร`, 'calm');
   }
@@ -393,19 +462,26 @@ function tallyVotes(room) {
 }
 
 function finishVerdict(room) {
-  const out = room.verdict?.eliminated && byId(room, room.verdict.eliminated);
-  if (out && out.role === 'hunter') {
-    room.hunter = { id: out.id, next: 'night' };
-    setPhase(room, 'hunter', 60, () => hunterShoot(room, out, null));
+  if (room.verdict?.tannerWin) return endGame(room, 'tanner');
+  const hunter = (room.verdict?.killed || []).map((id) => byId(room, id)).find((p) => p.role === 'hunter');
+  if (hunter) {
+    room.hunter = { id: hunter.id, next: 'night' };
+    setPhase(room, 'hunter', 60, () => hunterShoot(room, hunter, null));
     return;
   }
   afterDeaths(room, 'night');
 }
 
+const WIN_TEXT = {
+  village: 'ชาวบ้านกำจัดหมาป่าได้หมด ฝ่ายหมู่บ้านชนะ',
+  wolf: 'หมาป่ามีจำนวนเท่ากับชาวบ้านแล้ว ฝ่ายหมาป่าชนะ',
+  tanner: 'คนเบื่อโลกถูกประหารสมใจ ชนะคนเดียว',
+};
+
 function endGame(room, w) {
   room.winner = w;
   room.players.forEach((p) => (p.revealed = true));
-  log(room, w === 'village' ? 'ชาวบ้านกำจัดหมาป่าได้หมด ฝ่ายหมู่บ้านชนะ' : 'หมาป่ามีจำนวนเท่ากับชาวบ้านแล้ว ฝ่ายหมาป่าชนะ', 'system');
+  log(room, WIN_TEXT[w], 'system');
   setPhase(room, 'end');
 }
 
@@ -449,6 +525,7 @@ function chatChannel(room, p) {
   if (room.phase === 'lobby' || room.phase === 'end') return 'all';
   if (!p.alive) return 'ghost';
   if (room.phase === 'night') return p.role === 'werewolf' ? 'wolf' : null;
+  if (room.silenced === p.id) return null;
   return 'all';
 }
 
@@ -462,7 +539,7 @@ function canReadChat(room, me, m) {
 
 function postChat(room, p, raw) {
   const ch = chatChannel(room, p);
-  if (!ch) throw new Error('กลางคืนหมู่บ้านหลับอยู่ คุยได้ตอนเช้า');
+  if (!ch) throw new Error(room.silenced === p.id ? 'หมอผีสาปให้คุณพูดไม่ได้ตลอดวันนี้' : 'กลางคืนหมู่บ้านหลับอยู่ คุยได้ตอนเช้า');
   const text = String(raw || '').replace(/\s+/g, ' ').trim().slice(0, 300);
   if (!text) return;
   const now = Date.now();
@@ -506,7 +583,13 @@ function botMove(room, p) {
       return room.ready.has(p.id) ? null : () => handleAction(room, p, { type: 'ready' });
     case 'night': {
       const n = room.night;
-      if (n.step === 'main' && p.alive && !n.acts[p.id]) return () => nightAct(room, p, botNightTarget(room, p));
+      if (n.step === 'main' && p.alive && !n.acts[p.id]) {
+        return () => {
+          const t = botNightTarget(room, p);
+          if (Array.isArray(t)) nightAct(room, p, null, t);
+          else nightAct(room, p, t);
+        };
+      }
       if (n.step === 'witch' && p.role === 'witch' && p.alive && (room.witch.heal || room.witch.poison)) return () => witchAct(room, p, botWitch(room, p));
       return null;
     }
@@ -532,11 +615,12 @@ function botNightTarget(room, p) {
     const mate = alivePlayers(room).find((x) => x.role === 'werewolf' && x.id !== p.id && room.night.acts[x.id]?.target);
     return mate ? room.night.acts[mate.id].target : pick(options);
   }
-  if (kind === 'seer') {
-    const seen = new Set(p.seerResults.map((r) => r.id));
+  if (kind === 'seer' || kind === 'sorceress') {
+    const seen = new Set((kind === 'seer' ? p.seerResults : p.sorcResults).map((r) => r.id));
     const fresh = options.filter((id) => !seen.has(id));
     return pick(fresh.length ? fresh : options);
   }
+  if (kind === 'cupid') return shuffle([...options]).slice(0, 2);
   return pick(options);
 }
 
@@ -554,7 +638,8 @@ function botWitch(room, p) {
 function botVote(room, p) {
   const others = alivePlayers(room).filter((x) => x.id !== p.id);
   let pool = others;
-  if (p.role === 'werewolf') pool = others.filter((x) => x.role !== 'werewolf');
+  if (p.role === 'werewolf' || p.role === 'minion') pool = others.filter((x) => x.role !== 'werewolf');
+  if (room.lovers?.includes(p.id)) pool = pool.filter((x) => !room.lovers.includes(x.id));
   if (p.role === 'seer') {
     const wolf = p.seerResults.find((r) => r.isWolf && byId(room, r.id)?.alive);
     if (wolf) return wolf.id;
@@ -562,7 +647,7 @@ function botVote(room, p) {
     pool = others.filter((x) => !clean.has(x.id));
   }
   if (!pool.length) return 'skip';
-  if (p.role !== 'werewolf' && Math.random() < 0.08) return 'skip';
+  if (ROLES[p.role].team !== 'wolf' && Math.random() < 0.08) return 'skip';
   // Half the time, side with whoever already has the most votes.
   const tally = {};
   for (const v of Object.values(room.votes)) if (pool.some((x) => x.id === v)) tally[v] = (tally[v] || 0) + 1;
@@ -583,7 +668,7 @@ const BOT_LINES = [
 
 function botLine(room, p) {
   let others = alivePlayers(room).filter((x) => x.id !== p.id);
-  if (p.role === 'werewolf') others = others.filter((x) => x.role !== 'werewolf');
+  if (p.role === 'werewolf' || p.role === 'minion') others = others.filter((x) => x.role !== 'werewolf');
   if (p.role === 'seer') {
     const wolf = p.seerResults.find((r) => r.isWolf && byId(room, r.id)?.alive);
     if (wolf) return `ฉันเชื่อว่า ${byId(room, wolf.id).name} คือหมาป่า`;
@@ -606,7 +691,9 @@ function viewFor(room, me) {
   const meWolf = me.role === 'werewolf';
 
   const players = room.players.map((p) => {
-    const seeRole = p.id === me.id || p.revealed || ended || ghost || (meWolf && p.role === 'werewolf');
+    const seeRole =
+      p.id === me.id || p.revealed || ended || ghost || ((meWolf || me.role === 'minion') && p.role === 'werewolf');
+    const seeLove = room.lovers?.includes(p.id) && (ended || ghost || room.lovers.includes(me.id) || me.role === 'cupid');
     return {
       id: p.id,
       name: p.name,
@@ -621,6 +708,8 @@ function viewFor(room, me) {
       ready: room.phase === 'reveal' ? room.ready.has(p.id) : undefined,
       voted: room.phase === 'vote' ? !!room.votes[p.id] : undefined,
       acted: ghost && room.phase === 'night' ? !!room.night.acts[p.id] : undefined,
+      lover: inGame && seeLove ? true : undefined,
+      silenced: room.silenced === p.id || undefined,
     };
   });
 
@@ -650,13 +739,16 @@ function viewFor(room, me) {
   if (room.phase === 'reveal') view.reveal = { readyCount: room.ready.size, total: room.players.length, iAmReady: room.ready.has(me.id) };
 
   if (me.role === 'seer') view.me.seerResults = me.seerResults;
+  if (me.role === 'sorceress') view.me.sorcResults = me.sorcResults;
+  if (me.wasCursed) view.me.wasCursed = true;
+  if (inGame && room.lovers?.includes(me.id)) view.me.lover = room.lovers.find((x) => x !== me.id) || me.id;
 
   if (room.phase === 'night') {
     const n = room.night;
     const night = { step: n.step, waiting: alivePlayers(room).filter((p) => !n.acts[p.id]).length };
     if (n.step === 'main' && me.alive) {
       const action = nightActionFor(room, me);
-      night.action = { ...action, chosen: n.acts[me.id]?.target ?? undefined, done: !!n.acts[me.id] };
+      night.action = { ...action, chosen: n.acts[me.id]?.target ?? undefined, chosenPair: n.acts[me.id]?.targets, done: !!n.acts[me.id] };
       if (action.kind === 'guard') night.lastGuard = room.lastGuard;
       if (meWolf) {
         night.wolfPicks = {};
@@ -726,7 +818,7 @@ function handleAction(room, p, body) {
       const b = body.settings || {};
       if (b.roles) {
         for (const k of SPECIALS) {
-          if (b.roles[k] !== undefined) s.roles[k] = Math.max(0, Math.min(k === 'werewolf' ? 6 : 1, Math.floor(b.roles[k]) || 0));
+          if (b.roles[k] !== undefined) s.roles[k] = Math.max(0, Math.min(ROLES[k].max, Math.floor(b.roles[k]) || 0));
         }
         s.autoRoles = false;
       }
@@ -802,7 +894,7 @@ function handleAction(room, p, body) {
     }
     case 'night':
       if (room.phase !== 'night') throw new Error('ตอนนี้ไม่ใช่กลางคืน');
-      return nightAct(room, p, body.target ?? null);
+      return nightAct(room, p, body.target ?? null, body.targets);
     case 'witch':
       if (room.phase !== 'night') throw new Error('ตอนนี้ไม่ใช่กลางคืน');
       return witchAct(room, p, body);
