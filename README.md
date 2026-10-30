@@ -2,6 +2,8 @@
 
 เกมมนุษย์หมาป่าบนเว็บ เล่นได้ 5–16 คน ทุกคนใช้มือถือของตัวเอง ส่วนเว็บเป็นผู้ดำเนินเกม (แจกไพ่ เรียกกลางคืน นับโหวต ตัดสินผลแพ้ชนะ)
 
+**เล่นเลย: https://werewolf-party-pkqs.onrender.com**
+
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Panuwatko/werewolf-party)
 
 <p>
