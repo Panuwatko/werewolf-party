@@ -1,0 +1,13 @@
+{
+  "name": "werewolf-party",
+  "version": "1.0.0",
+  "description": "เกมมนุษย์หมาป่าบนเว็บ เล่นหลายคนผ่านมือถือ เว็บทำหน้าที่ผู้ดำเนินเกม",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
