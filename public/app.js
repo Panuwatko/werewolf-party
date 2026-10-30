@@ -179,7 +179,7 @@ function leaveLocal() {
   tabSession.del();
   history.replaceState(null, '', location.pathname);
   document.body.dataset.time = 'night';
-  closeChat();
+  closeChat(false);
   $chatFab.hidden = true;
   render();
 }
@@ -1033,7 +1033,11 @@ const CHANNEL = {
 };
 
 function updateChat(v) {
-  $chatFab.hidden = false;
+  // First view in a room: open the panel unless this player minimized it before.
+  if ($chat.hidden && $chatFab.hidden) {
+    if (store.get('ww.chatOpen') === false) $chatFab.hidden = false;
+    else return openChat();
+  }
   const msgs = v.chat || [];
   const key = msgs.map((m) => m.id).join(',') + '|' + v.players.map((p) => p.name + p.avatar + p.color).join();
   if (key !== chatShown) {
@@ -1068,6 +1072,9 @@ function updateChat(v) {
 
 function openChat() {
   $chat.hidden = false;
+  $chatFab.hidden = true;
+  document.body.classList.add('chat-open');
+  store.set('ww.chatOpen', true);
   $chatFab.setAttribute('aria-expanded', 'true');
   if (S.view) updateChat(S.view);
   const msgs = S.view?.chat || [];
@@ -1077,12 +1084,15 @@ function openChat() {
   if (!$chatInput.disabled && matchMedia('(pointer: fine)').matches) $chatInput.focus();
 }
 
-function closeChat() {
+function closeChat(remember = true) {
   $chat.hidden = true;
+  document.body.classList.remove('chat-open');
   $chatFab.setAttribute('aria-expanded', 'false');
+  if (remember) store.set('ww.chatOpen', false);
+  if (S.view) $chatFab.hidden = false;
 }
 
-$chatFab.addEventListener('click', () => ($chat.hidden ? openChat() : closeChat()));
+$chatFab.addEventListener('click', openChat);
 document.getElementById('chat-close').addEventListener('click', closeChat);
 $chatForm.addEventListener('submit', async (e) => {
   e.preventDefault();
