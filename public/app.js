@@ -70,6 +70,25 @@ function initial(name) {
   }
 }
 
+// ---------- characters ----------
+
+const C = window.COSMETICS;
+
+function loadLook() {
+  let look = store.get('ww.look');
+  if (!look || !C.avatars.includes(look.avatar) || !C.colors[look.color]) {
+    const keys = Object.keys(C.colors);
+    look = { avatar: C.avatars[Math.floor(Math.random() * C.avatars.length)], color: keys[Math.floor(Math.random() * keys.length)], motto: '' };
+    store.set('ww.look', look);
+  }
+  return look;
+}
+
+function face(p, cls = 'face') {
+  const color = C.colors[p.color] || C.colors.slate;
+  return `<span class="${cls}" style="--pc:${color}">${p.avatar ? esc(p.avatar) : esc(initial(p.name))}</span>`;
+}
+
 function glyph(role, cls = 'glyph') {
   return `<span class="${cls}" data-role="${role}"><svg viewBox="0 0 24 24" aria-hidden="true">${GLYPH[role]}</svg></span>`;
 }
@@ -160,6 +179,8 @@ function leaveLocal() {
   tabSession.del();
   history.replaceState(null, '', location.pathname);
   document.body.dataset.time = 'night';
+  closeChat();
+  $chatFab.hidden = true;
   render();
 }
 
@@ -185,6 +206,7 @@ function onView(v) {
   S.view = v;
   render();
   S.fresh = false;
+  updateChat(v);
 }
 
 // ---------- narrator ----------
@@ -307,8 +329,9 @@ function token(p, v, o = {}) {
   <${el} class="${cls}" ${p.role && !hideOwn ? `data-role="${p.role}"` : ''} ${pressed}>
     ${!p.connected && !p.isHost ? '<span class="off" title="หลุดการเชื่อมต่อ"></span>' : ''}
     ${badge}
-    <span class="face">${esc(initial(p.name))}</span>
+    ${face(p)}
     <span class="name">${esc(p.name)}${isMe ? ' (คุณ)' : ''}</span>
+    ${p.motto ? `<span class="motto">${esc(p.motto)}</span>` : ''}
     ${tag}
     ${kick}
   </${el}>`;
@@ -403,6 +426,14 @@ function renderHome(err) {
       : ''
   }
   <section class="panel">
+    <div class="look-row">
+      ${face({ ...loadLook(), name: name || '?' }, 'face big')}
+      <div class="stack" style="gap:2px;min-width:0">
+        <b>ตัวละครของคุณ</b>
+        <span class="small muted">${esc(loadLook().motto) || 'ยังไม่มีคำประจำตัว'}</span>
+      </div>
+      <button class="btn" data-do="edit-look">แต่งตัวละคร</button>
+    </div>
     <div class="field">
       <label for="name">ชื่อของคุณ</label>
       <input id="name" class="input" maxlength="20" autocomplete="nickname" placeholder="เช่น ต้น" value="${esc(name)}">
@@ -472,7 +503,7 @@ function renderLobby(v) {
   </section>
 
   <section class="panel">
-    <div class="row spread"><h2>ผู้เล่น</h2><span class="muted small">${n} / ${v.room.limits.max} คน</span></div>
+    <div class="row spread"><h2>ผู้เล่น <span class="muted small">${n} / ${v.room.limits.max} คน</span></h2><button class="btn" data-do="edit-look">แต่งตัวละคร</button></div>
     ${board(v, { kick: host })}
     ${
       host
@@ -772,7 +803,7 @@ async function enter(path, body) {
   if (!name) return renderHome('กรุณาใส่ชื่อก่อน');
   store.set('ww.name', name);
   try {
-    const res = await api(path, { ...body, name });
+    const res = await api(path, { ...body, name, profile: loadLook() });
     S.session = { code: res.code, token: res.token };
     store.set('ww.session', S.session);
     tabSession.set(S.session);
@@ -817,6 +848,8 @@ $app.addEventListener('click', (e) => {
       return act('kick', { id: b.dataset.id });
     case 'add-bot':
       return act('add-bot');
+    case 'edit-look':
+      return openEditor();
     case 'role': {
       const k = b.dataset.role;
       return act('settings', { settings: { roles: { [k]: v.room.settings.roles[k] + Number(b.dataset.d) } } });
@@ -909,6 +942,159 @@ $app.addEventListener('keydown', (e) => {
 });
 $app.addEventListener('keyup', (e) => {
   if (e.target.closest?.('[data-peek]')) showPeek(false);
+});
+
+// ---------- character editor ----------
+// Lives outside #app so live updates never wipe what someone is typing.
+
+const $editor = document.getElementById('editor');
+let draft = null;
+
+function openEditor() {
+  const look = loadLook();
+  const inRoom = !!S.view;
+  const canRename = !inRoom || S.view.room.phase === 'lobby';
+  const name = inRoom ? S.view.me.name : document.getElementById('name')?.value.trim() || store.get('ww.name') || '';
+  draft = { ...look, name };
+  $editor.innerHTML = `
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="editor-title">
+    <div class="row spread"><h2 id="editor-title">แต่งตัวละคร</h2><button class="chip-btn" data-ed="close">ปิด</button></div>
+    <div class="look-preview" id="look-preview"></div>
+    <div class="field"><label for="ed-name">ชื่อ</label><input id="ed-name" class="input" maxlength="20" value="${esc(name)}" ${canRename ? '' : 'disabled'}>${canRename ? '' : '<span class="small muted">เปลี่ยนชื่อได้เฉพาะในห้องรอ</span>'}</div>
+    <div class="field"><label for="ed-motto">คำประจำตัว</label><input id="ed-motto" class="input" maxlength="${C.mottoMax}" placeholder="เช่น ช่างตีเหล็กประจำหมู่บ้าน" value="${esc(look.motto)}"></div>
+    <div class="field"><span class="small muted">ตัวละคร</span><div class="avatar-grid">${C.avatars
+      .map((a) => `<button class="avatar-opt" data-ed="avatar" data-v="${a}" aria-pressed="${a === look.avatar}">${a}</button>`)
+      .join('')}</div></div>
+    <div class="field"><span class="small muted">สี</span><div class="row">${Object.entries(C.colors)
+      .map(([k, c]) => `<button class="swatch" data-ed="color" data-v="${k}" style="--pc:${c}" aria-pressed="${k === look.color}" aria-label="สี ${k}"></button>`)
+      .join('')}</div></div>
+    <div class="row"><button class="btn primary" data-ed="save">บันทึก</button><button class="btn ghost" data-ed="close">ยกเลิก</button></div>
+  </div>`;
+  $editor.hidden = false;
+  paintPreview();
+}
+
+function paintPreview() {
+  const el = document.getElementById('look-preview');
+  if (!el) return;
+  const motto = document.getElementById('ed-motto')?.value.trim() || '';
+  const name = document.getElementById('ed-name')?.value.trim() || 'ชื่อของคุณ';
+  el.innerHTML = `${face({ ...draft, name }, 'face big')}<div class="stack" style="gap:0;min-width:0"><b>${esc(name)}</b><span class="small muted">${esc(motto) || 'ยังไม่มีคำประจำตัว'}</span></div>`;
+}
+
+$editor.addEventListener('input', paintPreview);
+$editor.addEventListener('click', async (e) => {
+  if (e.target === $editor) return ($editor.hidden = true);
+  const b = e.target.closest('[data-ed]');
+  if (!b) return;
+  const kind = b.dataset.ed;
+  if (kind === 'close') return ($editor.hidden = true);
+  if (kind === 'avatar' || kind === 'color') {
+    draft[kind] = b.dataset.v;
+    $editor.querySelectorAll(`[data-ed="${kind}"]`).forEach((x) => x.setAttribute('aria-pressed', x === b));
+    return paintPreview();
+  }
+  if (kind === 'save') {
+    const name = document.getElementById('ed-name').value.trim();
+    const look = { avatar: draft.avatar, color: draft.color, motto: document.getElementById('ed-motto').value.trim().slice(0, C.mottoMax) };
+    if (!name) return toast('กรุณาใส่ชื่อ');
+    store.set('ww.look', look);
+    store.set('ww.name', name);
+    if (S.session && S.view) {
+      try {
+        await api('/api/action', { ...S.session, type: 'profile', profile: { ...look, name } });
+      } catch (err) {
+        return toast(err.message);
+      }
+    } else {
+      renderHome();
+    }
+    $editor.hidden = true;
+    toast('บันทึกตัวละครแล้ว');
+  }
+});
+
+// ---------- chat ----------
+// A floating button opens a sheet. Like the editor it sits outside #app.
+
+const $chatFab = document.getElementById('chat-fab');
+const $chat = document.getElementById('chat');
+const $chatList = document.getElementById('chat-list');
+const $chatForm = document.getElementById('chat-form');
+const $chatInput = document.getElementById('chat-input');
+const $chatWhere = document.getElementById('chat-where');
+let chatSeen = 0;
+let chatShown = '';
+
+const CHANNEL = {
+  all: { label: 'ทั้งหมู่บ้าน', hint: 'พิมพ์คุยกับทุกคน…' },
+  wolf: { label: 'หมาป่า (ลับ)', hint: 'กระซิบกับเพื่อนหมาป่า…' },
+  ghost: { label: 'วิญญาณ', hint: 'คุยกับคนที่ตายแล้ว…' },
+};
+
+function updateChat(v) {
+  $chatFab.hidden = false;
+  const msgs = v.chat || [];
+  const key = msgs.map((m) => m.id).join(',') + '|' + v.players.map((p) => p.name + p.avatar + p.color).join();
+  if (key !== chatShown) {
+    chatShown = key;
+    const stick = $chatList.scrollHeight - $chatList.scrollTop - $chatList.clientHeight < 40;
+    $chatList.innerHTML = msgs.length
+      ? msgs
+          .map((m) => {
+            const p = playerOf(v, m.from) || { name: '?', color: 'slate' };
+            const mine = m.from === v.me.id;
+            const pill = m.ch !== 'all' ? `<span class="ch-pill ch-${m.ch}">${CHANNEL[m.ch].label}</span>` : '';
+            return `<li class="msg ${mine ? 'mine' : ''}">${face(p, 'face sm')}<div class="bubble"><div class="who">${esc(p.name)} ${pill}</div><div class="text">${esc(m.text)}</div></div></li>`;
+          })
+          .join('')
+      : '<li class="muted small empty">ยังไม่มีข้อความ ทักทายกันก่อนเลย</li>';
+    if (stick || $chat.hidden) $chatList.scrollTop = $chatList.scrollHeight;
+  }
+  const ch = v.chatChannel;
+  $chatWhere.textContent = ch ? `คุยใน: ${CHANNEL[ch].label}` : 'กลางคืน หมู่บ้านหลับอยู่';
+  $chatWhere.className = `ch-pill ${ch ? 'ch-' + ch : ''}`;
+  $chatInput.disabled = !ch;
+  $chatInput.placeholder = ch ? CHANNEL[ch].hint : 'คุยได้อีกครั้งตอนเช้า';
+  $chatForm.querySelector('button').disabled = !ch;
+
+  const last = msgs.length ? msgs[msgs.length - 1].id : 0;
+  if (!$chat.hidden) chatSeen = last;
+  const unread = msgs.filter((m) => m.id > chatSeen && m.from !== v.me.id).length;
+  const badge = $chatFab.querySelector('.count');
+  badge.textContent = unread > 9 ? '9+' : unread;
+  badge.hidden = !unread;
+}
+
+function openChat() {
+  $chat.hidden = false;
+  $chatFab.setAttribute('aria-expanded', 'true');
+  if (S.view) updateChat(S.view);
+  const msgs = S.view?.chat || [];
+  chatSeen = msgs.length ? msgs[msgs.length - 1].id : 0;
+  $chatFab.querySelector('.count').hidden = true;
+  $chatList.scrollTop = $chatList.scrollHeight;
+  if (!$chatInput.disabled && matchMedia('(pointer: fine)').matches) $chatInput.focus();
+}
+
+function closeChat() {
+  $chat.hidden = true;
+  $chatFab.setAttribute('aria-expanded', 'false');
+}
+
+$chatFab.addEventListener('click', () => ($chat.hidden ? openChat() : closeChat()));
+document.getElementById('chat-close').addEventListener('click', closeChat);
+$chatForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = $chatInput.value.trim();
+  if (!text || !S.session) return;
+  $chatInput.value = '';
+  try {
+    await api('/api/action', { ...S.session, type: 'chat', text });
+  } catch (err) {
+    $chatInput.value = text;
+    toast(err.message);
+  }
 });
 
 render();

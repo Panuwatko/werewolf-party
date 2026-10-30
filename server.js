@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
+const COSMETICS = require('./public/cosmetics');
 
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -82,7 +83,7 @@ function setupProblem(room) {
 
 // ---------- room & player ----------
 
-function createRoom(hostName) {
+function createRoom(hostName, profile) {
   const code = newRoomCode();
   const room = {
     code,
@@ -92,22 +93,37 @@ function createRoom(hostName) {
     settings: { roles: suggestedRoles(MIN_PLAYERS), autoRoles: true, dayTime: 180, voteTime: 60, revealOnDeath: true },
     phase: 'lobby',
     phaseEndsAt: null,
+    chat: [],
+    chatSeq: 0,
     timer: null,
     day: 0,
     lastActive: Date.now(),
   };
   rooms.set(code, room);
-  const host = addPlayer(room, hostName);
+  const host = addPlayer(room, hostName, false, profile);
   room.hostId = host.id;
   return { room, player: host };
 }
 
-function addPlayer(room, name, bot = false) {
+// Players pick an avatar, a color and a short tagline; anything missing is random.
+function cleanProfile(input = {}) {
+  return {
+    avatar: COSMETICS.avatars.includes(input.avatar) ? input.avatar : null,
+    color: COSMETICS.colors[input.color] ? input.color : null,
+    motto: String(input.motto || '').replace(/\s+/g, ' ').trim().slice(0, COSMETICS.mottoMax),
+  };
+}
+
+function addPlayer(room, name, bot = false, profile = {}) {
+  const look = cleanProfile(profile);
   const p = {
     id: rid(6),
     token: rid(18),
     name,
     bot,
+    avatar: look.avatar || pick(COSMETICS.avatars),
+    color: look.color || pick(Object.keys(COSMETICS.colors)),
+    motto: look.motto,
     connected: bot,
     conns: 0,
     alive: true,
@@ -424,6 +440,38 @@ function advance(room) {
   }
 }
 
+// ---------- chat ----------
+// Board-game table talk: the village talks by day, only the wolves whisper
+// at night, and the dead keep to themselves. Everything opens up once a
+// game is over.
+
+function chatChannel(room, p) {
+  if (room.phase === 'lobby' || room.phase === 'end') return 'all';
+  if (!p.alive) return 'ghost';
+  if (room.phase === 'night') return p.role === 'werewolf' ? 'wolf' : null;
+  return 'all';
+}
+
+function canReadChat(room, me, m) {
+  if (m.ch === 'all') return true;
+  const settled = room.phase === 'lobby' || room.phase === 'end' || m.game !== (room.gameNo || 0);
+  if (settled) return true;
+  if (!me.alive) return true; // the dead see every channel
+  return m.ch === 'wolf' && me.role === 'werewolf';
+}
+
+function postChat(room, p, raw) {
+  const ch = chatChannel(room, p);
+  if (!ch) throw new Error('กลางคืนหมู่บ้านหลับอยู่ คุยได้ตอนเช้า');
+  const text = String(raw || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+  if (!text) return;
+  const now = Date.now();
+  if (now - (p.lastChat || 0) < 600) throw new Error('พิมพ์ช้าลงหน่อย');
+  p.lastChat = now;
+  room.chat.push({ id: ++room.chatSeq, ch, from: p.id, text, at: now, game: room.gameNo || 0 });
+  if (room.chat.length > 300) room.chat.splice(0, room.chat.length - 300);
+}
+
 // ---------- bots ----------
 // Bots sit in the room like players and act through the same rules as
 // everyone else, after a short "thinking" pause.
@@ -462,6 +510,12 @@ function botMove(room, p) {
       if (n.step === 'witch' && p.role === 'witch' && p.alive && (room.witch.heal || room.witch.poison)) return () => witchAct(room, p, botWitch(room, p));
       return null;
     }
+    case 'day':
+      if (!p.alive || p.chatDay === room.day) return null;
+      return () => {
+        p.chatDay = room.day;
+        if (Math.random() < 0.4) postChat(room, p, botLine(room, p));
+      };
     case 'vote':
       return p.alive && !room.votes[p.id] ? () => castVote(room, p, botVote(room, p)) : null;
     case 'hunter':
@@ -517,6 +571,27 @@ function botVote(room, p) {
   return pick(pool).id;
 }
 
+const BOT_LINES = [
+  'ฉันว่า {n} ดูแปลก ๆ นะ',
+  'เมื่อคืนได้ยินเสียงแถวบ้าน {n}',
+  '{n} เงียบผิดปกติ',
+  'ฉันเป็นชาวบ้านธรรมดาจริง ๆ นะ',
+  'อย่าเพิ่งรีบโหวตกัน ฟังกันก่อน',
+  'ใครเป็นผู้หยั่งรู้ ออกมาพูดหน่อย',
+  '{n} ตอบให้ชัด ๆ หน่อยสิ',
+];
+
+function botLine(room, p) {
+  let others = alivePlayers(room).filter((x) => x.id !== p.id);
+  if (p.role === 'werewolf') others = others.filter((x) => x.role !== 'werewolf');
+  if (p.role === 'seer') {
+    const wolf = p.seerResults.find((r) => r.isWolf && byId(room, r.id)?.alive);
+    if (wolf) return `ฉันเชื่อว่า ${byId(room, wolf.id).name} คือหมาป่า`;
+  }
+  const n = others.length ? pick(others).name : 'ใครสักคน';
+  return pick(BOT_LINES).replace('{n}', n);
+}
+
 function botShot(room, p) {
   const targets = alivePlayers(room).filter((x) => x.id !== p.id);
   return targets.length ? pick(targets).id : null;
@@ -536,6 +611,9 @@ function viewFor(room, me) {
       id: p.id,
       name: p.name,
       bot: p.bot,
+      avatar: p.avatar,
+      color: p.color,
+      motto: p.motto,
       alive: p.alive,
       connected: p.connected,
       isHost: p.id === room.hostId,
@@ -565,6 +643,9 @@ function viewFor(room, me) {
     },
     players,
   };
+
+  view.chat = room.chat.filter((m) => canReadChat(room, me, m)).slice(-120);
+  view.chatChannel = chatChannel(room, me);
 
   if (room.phase === 'reveal') view.reveal = { readyCount: room.ready.size, total: room.players.length, iAmReady: room.ready.has(me.id) };
 
@@ -664,6 +745,25 @@ function handleAction(room, p, body) {
       const problem = setupProblem(room);
       if (problem) throw new Error(problem);
       return startGame(room);
+    }
+    case 'chat':
+      return postChat(room, p, body.text);
+    case 'profile': {
+      const b = body.profile || {};
+      if (b.name !== undefined) {
+        const name = cleanName(b.name);
+        if (!name) throw new Error('กรุณาใส่ชื่อ');
+        if (name !== p.name) {
+          if (room.phase !== 'lobby') throw new Error('เปลี่ยนชื่อได้เฉพาะในห้องรอ');
+          if (room.players.some((x) => x !== p && x.name.toLowerCase() === name.toLowerCase())) throw new Error('มีคนใช้ชื่อนี้ในห้องแล้ว');
+          p.name = name;
+        }
+      }
+      const look = cleanProfile(b);
+      if (look.avatar) p.avatar = look.avatar;
+      if (look.color) p.color = look.color;
+      p.motto = look.motto;
+      return;
     }
     case 'add-bot': {
       hostOnly();
@@ -768,7 +868,7 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       const name = cleanName(body.name);
       if (!name) return json(res, 400, { error: 'กรุณาใส่ชื่อ' });
-      const { room, player } = createRoom(name);
+      const { room, player } = createRoom(name, body.profile);
       return json(res, 200, { code: room.code, token: player.token });
     }
 
@@ -783,7 +883,7 @@ const server = http.createServer(async (req, res) => {
       if (room.phase !== 'lobby') return json(res, 409, { error: 'เกมในห้องนี้เริ่มไปแล้ว รอรอบถัดไปนะ' });
       if (room.players.length >= MAX_PLAYERS) return json(res, 409, { error: `ห้องเต็มแล้ว (สูงสุด ${MAX_PLAYERS} คน)` });
       if (room.players.some((p) => p.name.toLowerCase() === name.toLowerCase())) return json(res, 409, { error: 'มีคนใช้ชื่อนี้ในห้องแล้ว' });
-      const p = addPlayer(room, name);
+      const p = addPlayer(room, name, false, body.profile);
       broadcast(room);
       return json(res, 200, { code: room.code, token: p.token });
     }

@@ -15,7 +15,21 @@
   <main id="app"></main>
   <div id="toast" role="status" aria-live="polite" hidden></div>
   <div id="peek" hidden></div>
+  <div id="editor" class="modal" hidden></div>
+  <button id="chat-fab" type="button" aria-controls="chat" aria-expanded="false" hidden>แชท <span class="count" hidden>0</span></button>
+  <section id="chat" aria-label="แชท" hidden>
+    <header class="row spread">
+      <div class="stack" style="gap:2px"><b>แชท</b><span id="chat-where" class="ch-pill"></span></div>
+      <button id="chat-close" class="chip-btn" type="button">ปิด</button>
+    </header>
+    <ul id="chat-list" aria-live="polite"></ul>
+    <form id="chat-form" class="row" autocomplete="off">
+      <input id="chat-input" class="input" maxlength="300" aria-label="ข้อความ">
+      <button class="btn primary" type="submit">ส่ง</button>
+    </form>
+  </section>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
+  <script src="/cosmetics.js" defer></script>
   <script src="/app.js" defer></script>
 </body>
 </html>

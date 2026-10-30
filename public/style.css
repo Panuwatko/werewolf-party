@@ -241,19 +241,23 @@ button.token { cursor: pointer; transition: transform .12s ease, border-color .2
 button.token:hover { border-color: var(--accent); }
 button.token:active { transform: scale(.96); }
 .token[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; background: color-mix(in srgb, var(--accent) 22%, var(--bg-2)); }
-.token .face {
-  width: 46px; height: 46px; border-radius: 50%;
+.face {
+  width: 46px; height: 46px; border-radius: 50%; flex: none;
   display: grid; place-items: center;
-  font: 600 20px var(--f-data);
-  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  font: 600 24px/1 var(--f-data);
+  background: color-mix(in srgb, var(--pc, var(--accent)) 30%, var(--surface));
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--pc, var(--accent)) 70%, transparent);
   color: var(--ink);
   border: 2px solid transparent;
 }
+.face.big { width: 64px; height: 64px; font-size: 34px; }
+.face.sm { width: 32px; height: 32px; font-size: 17px; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--pc, var(--accent)) 70%, transparent); }
+.token .motto { font-size: 11px; line-height: 1.25; color: var(--muted); font-style: italic; overflow-wrap: anywhere; }
 .token .name { font-size: 14px; font-weight: 500; line-height: 1.25; overflow-wrap: anywhere; }
 .token .tag { font-size: 11px; line-height: 1.2; color: var(--muted); }
 .token .tag.role { color: var(--rc); font-weight: 600; }
 .token.dead { opacity: .5; }
-.token.dead .face { background: transparent; border: 2px dashed var(--muted); color: var(--muted); }
+.token.dead .face { background: transparent; border: 2px dashed var(--muted); box-shadow: none; filter: grayscale(1); opacity: .7; }
 .token.dead .name { text-decoration: line-through; }
 .token.mate .face { border-color: var(--blood); }
 .token.me .face { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
@@ -357,3 +361,65 @@ button.token:active { transform: scale(.96); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---------- character editor ---------- */
+.look-row, .look-preview { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; }
+.look-preview { grid-template-columns: auto 1fr; padding: 12px; border-radius: 12px; background: var(--bg-2); }
+.modal {
+  position: fixed; inset: 0; z-index: 35;
+  display: grid; place-items: end center;
+  background: rgba(5, 7, 15, .55);
+  padding: 16px max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+@media (min-width: 640px) { .modal { place-items: center; } }
+.sheet {
+  width: min(520px, 100%); max-height: calc(100dvh - 32px); overflow: auto;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 18px;
+  padding: 18px; display: grid; gap: 14px;
+  box-shadow: 0 24px 60px -20px rgba(0,0,0,.6);
+}
+.avatar-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 6px; }
+.avatar-opt {
+  height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg-2);
+  font-size: 24px; line-height: 1;
+}
+.avatar-opt[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; background: color-mix(in srgb, var(--accent) 18%, var(--bg-2)); }
+.swatch { width: 34px; height: 34px; border-radius: 50%; border: 2px solid var(--surface); background: var(--pc); box-shadow: 0 0 0 1px var(--line); }
+.swatch[aria-pressed="true"] { box-shadow: 0 0 0 3px var(--ink); }
+
+/* ---------- chat ---------- */
+#app { padding-bottom: max(96px, calc(env(safe-area-inset-bottom) + 80px)); }
+#chat-fab {
+  position: fixed; z-index: 25;
+  right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom));
+  display: flex; align-items: center; gap: 8px;
+  min-height: 52px; padding: 0 20px; border-radius: 999px; border: 0;
+  background: var(--accent); color: var(--accent-ink); font-weight: 600;
+  box-shadow: 0 12px 30px -10px rgba(0,0,0,.55);
+}
+#chat-fab .count { background: var(--blood); color: #fff; border-radius: 999px; min-width: 22px; padding: 0 6px; font: 600 12px/22px var(--f-data); text-align: center; }
+#chat {
+  position: fixed; z-index: 30;
+  right: max(16px, env(safe-area-inset-right)); bottom: max(80px, calc(env(safe-area-inset-bottom) + 76px));
+  width: min(400px, calc(100vw - 32px)); height: min(520px, calc(100dvh - 120px));
+  display: grid; grid-template-rows: auto 1fr auto;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 18px;
+  box-shadow: 0 24px 60px -20px rgba(0,0,0,.6);
+  overflow: hidden;
+}
+#chat > header { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+#chat-list { list-style: none; margin: 0; padding: 12px 14px; overflow-y: auto; display: grid; gap: 10px; align-content: start; }
+#chat-form { padding: 10px; border-top: 1px solid var(--line); flex-wrap: nowrap; }
+#chat-form .input { min-height: 44px; padding: 8px 12px; min-width: 0; flex: 1; }
+.msg { display: grid; grid-template-columns: 32px 1fr; gap: 8px; align-items: start; }
+.msg .bubble { background: var(--bg-2); border-radius: 4px 14px 14px 14px; padding: 6px 10px; min-width: 0; justify-self: start; max-width: 100%; }
+.msg.mine .bubble { background: color-mix(in srgb, var(--accent) 20%, var(--bg-2)); }
+.msg .who { font-size: 12px; font-weight: 600; color: var(--muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.msg .text { overflow-wrap: anywhere; white-space: pre-wrap; }
+.empty { text-align: center; padding: 20px 0; }
+.ch-pill { display: inline-block; font-size: 11px; font-weight: 600; line-height: 1.4; padding: 1px 8px; border-radius: 999px; background: var(--bg-2); color: var(--muted); }
+.ch-pill.ch-wolf { background: color-mix(in srgb, var(--blood) 22%, transparent); color: var(--blood); }
+.ch-pill.ch-ghost { background: color-mix(in srgb, var(--muted) 25%, transparent); color: var(--ink); }
+.ch-pill.ch-all { background: color-mix(in srgb, var(--good) 18%, transparent); color: var(--good); }
