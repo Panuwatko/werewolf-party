@@ -6,7 +6,8 @@
   "private": true,
   "scripts": {
     "start": "node server.js",
-    "online": "node online.js"
+    "online": "node online.js",
+    "test": "node --test"
   },
   "engines": {
     "node": ">=18"

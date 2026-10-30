@@ -31,6 +31,7 @@ const ROLES = {
   spellcaster: { team: 'village', max: 1 },
   lycan: { team: 'village', max: 1 },
   cursed: { team: 'village', max: 1 },
+  toughguy: { team: 'village', max: 1 },
   villager: { team: 'village' },
   tanner: { team: 'tanner', max: 1 },
 };
@@ -186,6 +187,7 @@ function setPhase(room, phase, seconds, onTimeout) {
       onTimeout();
       broadcast(room);
     }, seconds * 1000);
+    room.timer.unref?.();
   } else {
     room.phaseToken = rid(4);
   }
@@ -205,6 +207,7 @@ function startGame(room) {
     p.sorcResults = [];
     p.princeUsed = false;
     p.wasCursed = false;
+    p.doomNight = null;
   });
   room.lovers = null;
   room.silenced = null;
@@ -334,11 +337,16 @@ function resolveNight(room) {
   const deaths = [];
   const target = n.wolfTarget && byId(room, n.wolfTarget);
   const saved = n.witchAct?.save;
-  if (target && target.id !== n.guardTarget && !saved) {
+  // A tough guy bitten last night holds on for one day, then dies tonight
+  // whatever anyone does.
+  for (const p of alivePlayers(room)) if (p.doomNight === room.day) deaths.push(p.id);
+  if (target && target.id !== n.guardTarget && !saved && !deaths.includes(target.id)) {
     // The cursed don't die from a bite: they wake up as a werewolf.
     if (target.role === 'cursed') {
       target.role = 'werewolf';
       target.wasCursed = true;
+    } else if (target.role === 'toughguy' && !target.doomNight) {
+      target.doomNight = room.day + 1;
     } else {
       deaths.push(target.id);
     }
@@ -572,7 +580,7 @@ function scheduleBots(room) {
         console.error(`bot ${p.name}:`, e.message);
       }
       broadcast(room);
-    }, 1200 + Math.random() * 2800);
+    }, 1200 + Math.random() * 2800).unref?.();
   }
 }
 
@@ -741,6 +749,7 @@ function viewFor(room, me) {
   if (me.role === 'seer') view.me.seerResults = me.seerResults;
   if (me.role === 'sorceress') view.me.sorcResults = me.sorcResults;
   if (me.wasCursed) view.me.wasCursed = true;
+  if (me.doomNight && me.alive) view.me.wounded = true;
   if (inGame && room.lovers?.includes(me.id)) view.me.lover = room.lovers.find((x) => x !== me.id) || me.id;
 
   if (room.phase === 'night') {
@@ -1035,9 +1044,16 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000).unref();
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  มนุษย์หมาป่า พร้อมเล่นแล้ว\n`);
-  console.log(`  เครื่องนี้:      http://localhost:${PORT}`);
-  for (const u of lanUrls()) console.log(`  มือถือในวง Wi-Fi เดียวกัน: ${u}`);
-  console.log('');
-});
+function start() {
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`\n  มนุษย์หมาป่า พร้อมเล่นแล้ว\n`);
+    console.log(`  เครื่องนี้:      http://localhost:${PORT}`);
+    for (const u of lanUrls()) console.log(`  มือถือในวง Wi-Fi เดียวกัน: ${u}`);
+    console.log('');
+  });
+}
+
+if (require.main === module) start();
+
+// Game rules exposed for test/rules.test.js.
+module.exports = { start, rooms, createRoom, addPlayer, startGame, startNight, nightAct, witchAct, castVote, finishVerdict, advance, viewFor, byId };

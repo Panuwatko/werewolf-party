@@ -5,7 +5,7 @@
 const { spawn } = require('child_process');
 
 process.env.PORT = process.env.PORT || '3000';
-require('./server');
+require('./server').start();
 
 const tunnel = spawn('cloudflared', ['tunnel', '--no-autoupdate', '--url', `http://localhost:${process.env.PORT}`], {
   stdio: ['ignore', 'pipe', 'pipe'],

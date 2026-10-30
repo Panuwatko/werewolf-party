@@ -188,6 +188,7 @@ details.rules summary { cursor: pointer; font-weight: 600; }
 [data-role="prince"], [data-role="mayor"] { --rc: var(--hunter); }
 [data-role="spellcaster"] { --rc: var(--guard); }
 [data-role="cursed"] { --rc: var(--witch); }
+[data-role="toughguy"] { --rc: var(--guard); }
 [data-role="tanner"] { --rc: var(--muted); }
 
 /* ---------- top bar ---------- */

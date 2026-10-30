@@ -73,6 +73,11 @@ const ROLE = {
     team: 'ฝ่ายหมู่บ้าน',
     desc: 'เริ่มเกมเป็นชาวบ้าน แต่ถ้าถูกหมาป่ากัดจะไม่ตาย กลายเป็นหมาป่าแทน',
   },
+  toughguy: {
+    name: 'หนุ่มถึก',
+    team: 'ฝ่ายหมู่บ้าน',
+    desc: 'ถ้าโดนหมาป่ากัดจะยังไม่ตายทันที อยู่ต่อได้อีก 1 วัน แล้วตายตอนจบคืนถัดไป คนอื่นไม่รู้ว่าคุณโดนกัด',
+  },
   tanner: {
     name: 'คนเบื่อโลก',
     team: 'ฝ่ายอิสระ',
@@ -94,15 +99,16 @@ const ROLE_SHORT = {
   spellcaster: 'สาปให้คนพูดไม่ได้ 1 วัน',
   lycan: 'ผู้หยั่งรู้เห็นเป็นหมาป่า',
   cursed: 'โดนกัดแล้วกลายเป็นหมาป่า',
+  toughguy: 'โดนกัดแล้วยังอยู่ได้อีก 1 วัน',
   villager: 'คำนวณจากจำนวนผู้เล่นที่เหลือ',
   tanner: 'ชนะถ้าถูกโหวตประหาร',
 };
 const ROLE_GROUPS = [
-  ['ฝ่ายหมู่บ้าน', ['seer', 'bodyguard', 'witch', 'hunter', 'cupid', 'prince', 'mayor', 'spellcaster', 'lycan', 'cursed', 'villager']],
+  ['ฝ่ายหมู่บ้าน', ['seer', 'bodyguard', 'witch', 'hunter', 'cupid', 'prince', 'mayor', 'spellcaster', 'lycan', 'cursed', 'toughguy', 'villager']],
   ['ฝ่ายหมาป่า', ['werewolf', 'minion', 'sorceress']],
   ['ฝ่ายอิสระ', ['tanner']],
 ];
-const ROLE_ORDER = ['werewolf', 'minion', 'sorceress', 'seer', 'bodyguard', 'witch', 'hunter', 'cupid', 'prince', 'mayor', 'spellcaster', 'lycan', 'cursed', 'villager', 'tanner'];
+const ROLE_ORDER = ['werewolf', 'minion', 'sorceress', 'seer', 'bodyguard', 'witch', 'hunter', 'cupid', 'prince', 'mayor', 'spellcaster', 'lycan', 'cursed', 'toughguy', 'villager', 'tanner'];
 const WOLF_TEAM = ['werewolf', 'minion', 'sorceress'];
 
 const GLYPH = {
@@ -120,6 +126,7 @@ const GLYPH = {
   spellcaster: '<path d="M3.5 12c3-4.5 14-4.5 17 0-3 4.5-14 4.5-17 0z"/><path d="M3.5 12h17"/><path d="M4 4l16 16"/>',
   lycan: '<path d="M19.5 14.5A8 8 0 1 1 9.5 4.5a6.5 6.5 0 0 0 10 10z"/><circle cx="15" cy="8" r="1"/>',
   cursed: '<path d="M12 3l2.4 5.6 6.1.6-4.6 4 1.4 6-5.3-3.2-5.3 3.2 1.4-6-4.6-4 6.1-.6z"/><path d="M12 9.5v3"/>',
+  toughguy: '<path d="M6.5 6v12M17.5 6v12M3.5 9v6M20.5 9v6M6.5 12h11"/>',
   tanner: '<path d="M12 2.5v6"/><circle cx="12" cy="13" r="4.5"/><path d="M9 21.5h6"/>',
 };
 
@@ -659,6 +666,7 @@ function myNotes(v) {
   const wolves = v.players.filter((p) => p.role === 'werewolf' && p.id !== v.me.id).map((p) => `<b>${esc(p.name)}</b>`);
   if (v.me.wasCursed) notes.push(['bad', `คุณถูกหมาป่ากัดและกลายเป็น<b>มนุษย์หมาป่า</b>แล้ว${wolves.length ? ` เพื่อนหมาป่า: ${wolves.join(', ')}` : ''}`]);
   else if (v.me.role === 'werewolf') notes.push(['bad', wolves.length ? `เพื่อนหมาป่าของคุณ: ${wolves.join(', ')}` : 'คุณเป็นหมาป่าตัวเดียวในเกมนี้']);
+  if (v.me.wounded) notes.push(['bad', 'เมื่อคืนคุณโดนหมาป่ากัด! ยังไม่ตายเพราะความถึก แต่จะตายตอนจบคืนนี้ ใช้วันสุดท้ายให้คุ้ม']);
   if (v.me.role === 'minion') notes.push(['bad', wolves.length ? `หมาป่าที่คุณต้องช่วย: ${wolves.join(', ')}` : 'ตอนนี้ไม่มีหมาป่าเหลือแล้ว']);
   if (v.me.lover && v.me.alive) {
     const other = v.me.lover === v.me.id ? null : nameOf(v, v.me.lover);
