@@ -1210,6 +1210,18 @@ function updateChat(v) {
 
 }
 
+// Compact by default so the board stays visible; players can enlarge it.
+const $chatSize = document.getElementById('chat-size');
+function setChatTall(tall) {
+  document.body.classList.toggle('chat-tall', tall);
+  $chatSize.textContent = tall ? 'ย่อ' : 'ขยาย';
+  $chatSize.setAttribute('aria-pressed', tall);
+  store.set('ww.chatTall', tall);
+  $chatList.scrollTop = $chatList.scrollHeight;
+}
+setChatTall(store.get('ww.chatTall') === true);
+$chatSize.addEventListener('click', () => setChatTall(!document.body.classList.contains('chat-tall')));
+
 function openChat() {
   $chat.hidden = false;
   document.body.classList.add('chat-open');
