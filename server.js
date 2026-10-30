@@ -455,7 +455,7 @@ function viewFor(room, me) {
       phaseEndsAt: room.phaseEndsAt,
       settings: room.settings,
       setupProblem: room.phase === 'lobby' ? setupProblem(room) : null,
-      joinUrls: lanUrls(),
+      joinUrls: process.env.PUBLIC_URL ? [process.env.PUBLIC_URL] : lanUrls(),
       rolesInGame: inGame ? room.rolesInGame : null,
       winner: room.winner || null,
       announcement: room.announcement || null,

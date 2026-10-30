@@ -463,7 +463,7 @@ function renderLobby(v) {
     <div class="stack" style="min-width:0">
       <span class="eyebrow">รหัสห้อง</span>
       <div class="room-code">${esc(v.room.code)}</div>
-      <p class="small muted">ให้เพื่อนสแกน QR หรือเปิดลิงก์นี้${isLocal() ? ' (ต่อ Wi-Fi เดียวกับเครื่องที่เปิดเซิร์ฟเวอร์)' : ''}</p>
+      <p class="small muted">ให้เพื่อนสแกน QR หรือเปิดลิงก์นี้${/^http:\/\/(10|172|192)\./.test(url) ? ' (ต่อ Wi-Fi เดียวกับเครื่องที่เปิดเซิร์ฟเวอร์)' : ' เข้าจากที่ไหนก็ได้'}</p>
       <p class="join-url" id="join-url">${esc(url)}</p>
       <div class="row"><button class="btn" data-do="copy">คัดลอกลิงก์</button></div>
     </div>
