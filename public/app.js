@@ -179,8 +179,7 @@ function leaveLocal() {
   tabSession.del();
   history.replaceState(null, '', location.pathname);
   document.body.dataset.time = 'night';
-  closeChat(false);
-  $chatFab.hidden = true;
+  closeChat();
   render();
 }
 
@@ -1015,15 +1014,14 @@ $editor.addEventListener('click', async (e) => {
 });
 
 // ---------- chat ----------
-// A floating button opens a sheet. Like the editor it sits outside #app.
+// Docked panel that stays open in every room. Like the editor it sits
+// outside #app, so live updates never wipe what someone is typing.
 
-const $chatFab = document.getElementById('chat-fab');
 const $chat = document.getElementById('chat');
 const $chatList = document.getElementById('chat-list');
 const $chatForm = document.getElementById('chat-form');
 const $chatInput = document.getElementById('chat-input');
 const $chatWhere = document.getElementById('chat-where');
-let chatSeen = 0;
 let chatShown = '';
 
 const CHANNEL = {
@@ -1033,11 +1031,8 @@ const CHANNEL = {
 };
 
 function updateChat(v) {
-  // First view in a room: open the panel unless this player minimized it before.
-  if ($chat.hidden && $chatFab.hidden) {
-    if (store.get('ww.chatOpen') === false) $chatFab.hidden = false;
-    else return openChat();
-  }
+  // Chat is always on screen while in a room, so nobody misses the talk.
+  if ($chat.hidden) return openChat();
   const msgs = v.chat || [];
   const key = msgs.map((m) => m.id).join(',') + '|' + v.players.map((p) => p.name + p.avatar + p.color).join();
   if (key !== chatShown) {
@@ -1062,38 +1057,20 @@ function updateChat(v) {
   $chatInput.placeholder = ch ? CHANNEL[ch].hint : 'คุยได้อีกครั้งตอนเช้า';
   $chatForm.querySelector('button').disabled = !ch;
 
-  const last = msgs.length ? msgs[msgs.length - 1].id : 0;
-  if (!$chat.hidden) chatSeen = last;
-  const unread = msgs.filter((m) => m.id > chatSeen && m.from !== v.me.id).length;
-  const badge = $chatFab.querySelector('.count');
-  badge.textContent = unread > 9 ? '9+' : unread;
-  badge.hidden = !unread;
 }
 
 function openChat() {
   $chat.hidden = false;
-  $chatFab.hidden = true;
   document.body.classList.add('chat-open');
-  store.set('ww.chatOpen', true);
-  $chatFab.setAttribute('aria-expanded', 'true');
   if (S.view) updateChat(S.view);
-  const msgs = S.view?.chat || [];
-  chatSeen = msgs.length ? msgs[msgs.length - 1].id : 0;
-  $chatFab.querySelector('.count').hidden = true;
   $chatList.scrollTop = $chatList.scrollHeight;
-  if (!$chatInput.disabled && matchMedia('(pointer: fine)').matches) $chatInput.focus();
 }
 
-function closeChat(remember = true) {
+function closeChat() {
   $chat.hidden = true;
   document.body.classList.remove('chat-open');
-  $chatFab.setAttribute('aria-expanded', 'false');
-  if (remember) store.set('ww.chatOpen', false);
-  if (S.view) $chatFab.hidden = false;
 }
 
-$chatFab.addEventListener('click', openChat);
-document.getElementById('chat-close').addEventListener('click', closeChat);
 $chatForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const text = $chatInput.value.trim();
