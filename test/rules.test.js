@@ -4,8 +4,10 @@ const assert = require('node:assert/strict');
 const W = require('../server');
 
 // Deals the given roles in order to players named P0, P1, ... and starts night 1.
-function game(roles) {
+// Trials are off unless asked for, so day goes straight to the vote.
+function game(roles, settings = { trial: false }) {
   const { room } = W.createRoom('P0');
+  Object.assign(room.settings, settings);
   for (let i = 1; i < roles.length; i++) W.addPlayer(room, `P${i}`);
   W.startGame(room);
   room.players.forEach((p, i) => {
@@ -138,4 +140,102 @@ test('the minion knows the wolves but the wolves do not know the minion', () => 
   const room = game(['werewolf', 'minion', 'villager', 'villager', 'villager', 'villager']);
   assert.equal(W.viewFor(room, P(room, 1)).players[0].role, 'werewolf');
   assert.equal(W.viewFor(room, P(room, 0)).players[1].role, null);
+});
+
+// ---------- trials, last words, reactions, timeline, presets ----------
+
+function accuse(room, picks) {
+  if (room.phase === 'day') W.advance(room);
+  for (const [i, p] of room.players.entries()) {
+    if (!p.alive || room.phase !== 'accuse') continue;
+    const t = picks[i] ?? 'skip';
+    W.nominate(room, p, t === 'skip' ? 'skip' : P(room, t).id);
+  }
+}
+
+test('trial: the most-accused stands trial and only they can be voted', () => {
+  const room = game(['werewolf', 'villager', 'villager', 'villager', 'villager', 'villager'], { trial: true });
+  night(room, { 0: 5 });
+  accuse(room, { 1: 0, 2: 0, 3: 4 });
+  assert.equal(room.phase, 'defense');
+  assert.deepEqual(room.accused, [P(room, 0).id]);
+  W.advance(room);
+  assert.equal(room.phase, 'vote');
+  assert.throws(() => W.castVote(room, P(room, 1), P(room, 4).id), /ผู้ต้องหา/);
+  day(room, { 1: 0, 2: 0, 3: 0, 4: 0 });
+  assert.equal(room.verdict.eliminated, P(room, 0).id);
+});
+
+test('trial: nobody accused means no vote today', () => {
+  const room = game(['werewolf', 'villager', 'villager', 'villager', 'villager', 'villager'], { trial: true });
+  night(room, { 0: 5 });
+  accuse(room, {});
+  assert.equal(room.phase, 'verdict');
+  assert.equal(room.verdict.noAccused, true);
+});
+
+test('last words: only the executed player, once, readable by all', () => {
+  const room = game(['werewolf', 'villager', 'villager', 'villager', 'villager', 'villager']);
+  night(room, { 0: 5 });
+  day(room, { 1: 2, 3: 2, 4: 2 });
+  const out = P(room, 2);
+  assert.equal(room.phase, 'verdict');
+  W.postChat(room, P(room, 5), 'ผีพูด');
+  assert.equal(room.chat.at(-1).ch, 'ghost', 'the night victim only reaches the ghosts');
+  assert.ok(!W.viewFor(room, P(room, 1)).chat.some((m) => m.text === 'ผีพูด'));
+  W.postChat(room, out, 'ฉันบริสุทธิ์');
+  const msg = room.chat.at(-1);
+  assert.equal(msg.ch, 'last');
+  assert.equal(W.viewFor(room, P(room, 1)).chat.at(-1).text, 'ฉันบริสุทธิ์');
+  assert.equal(W.chatChannel(room, out), 'ghost', 'one message only');
+});
+
+test('reactions: the dead cannot react to village chat mid-game', () => {
+  const room = game(['werewolf', 'villager', 'villager', 'villager', 'villager', 'villager']);
+  night(room, { 0: 5 });
+  W.postChat(room, P(room, 1), 'สวัสดี');
+  const id = room.chat.at(-1).id;
+  W.react(room, P(room, 2), id, '👍');
+  assert.deepEqual(room.chat.at(-1).reactions['👍'], [P(room, 2).id]);
+  assert.throws(() => W.react(room, P(room, 5), id, '🐺'));
+  W.react(room, P(room, 2), id, '👍');
+  assert.equal(room.chat.at(-1).reactions['👍'], undefined, 'second tap removes it');
+});
+
+test('night timer resolves the night when someone never acts', () => {
+  const room = game(['werewolf', 'villager', 'villager', 'villager', 'villager', 'villager']);
+  W.nightAct(room, P(room, 0), P(room, 3).id);
+  W.advance(room); // what the timer does on timeout
+  assert.equal(room.phase, 'day');
+  assert.equal(P(room, 3).alive, false);
+});
+
+test('timeline records who did what each night and day', () => {
+  const room = game(['werewolf', 'seer', 'bodyguard', 'witch', 'villager', 'villager']);
+  night(room, { 0: 4, 1: 0, 2: 4 });
+  const n1 = room.history[0];
+  assert.equal(n1.kind, 'night');
+  assert.ok(n1.events.some((e) => e.type === 'bite' && e.target === P(room, 4).id));
+  assert.ok(n1.events.some((e) => e.type === 'seer' && e.wolf === true));
+  assert.ok(n1.events.some((e) => e.type === 'guarded'));
+  assert.deepEqual(n1.deaths, []);
+  day(room, { 1: 0, 2: 0, 3: 0, 4: 0 });
+  assert.equal(room.history[1].kind, 'day');
+  assert.equal(room.history[1].eliminated, P(room, 0).id);
+  W.finishVerdict(room);
+  assert.equal(room.phase, 'end');
+  assert.equal(W.viewFor(room, P(room, 4)).room.history.length, 2, 'shown once the game ends');
+});
+
+test('every preset is a valid setup for 5 to 16 players', () => {
+  for (const preset of ['beginner', 'classic', 'random', 'chaos']) {
+    for (let n = 5; n <= 16; n++) {
+      for (let k = 0; k < 20; k++) {
+        const roles = W.presetRoles(preset, n);
+        const specials = Object.values(roles).reduce((a, b) => a + b, 0);
+        assert.ok(specials <= n, `${preset} n=${n} has ${specials} specials`);
+        assert.ok(roles.werewolf >= 1 && roles.werewolf * 2 < n, `${preset} n=${n} wolves=${roles.werewolf}`);
+      }
+    }
+  }
 });

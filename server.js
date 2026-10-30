@@ -86,6 +86,36 @@ function suggestedRoles(n) {
   });
 }
 
+// Ready-made role sets the host can pick instead of setting roles one by one.
+const PRESETS = ['beginner', 'classic', 'random', 'chaos'];
+
+function presetRoles(name, n) {
+  const roles = Object.fromEntries(SPECIALS.map((k) => [k, 0]));
+  const wolves = Math.max(1, Math.floor((n + 2) / 4));
+  if (name === 'classic') return suggestedRoles(n);
+  Object.assign(roles, { werewolf: wolves, seer: 1 });
+  if (name === 'beginner') {
+    roles.bodyguard = n >= 6 ? 1 : 0;
+    return roles;
+  }
+  let room = n - wolves - 2; // seats left after wolves, seer and one plain villager
+  if (name === 'random') {
+    const village = shuffle(['bodyguard', 'witch', 'hunter', 'cupid', 'prince', 'mayor', 'spellcaster', 'lycan', 'cursed', 'toughguy']);
+    for (const k of village.slice(0, Math.min(room, 2 + Math.floor(Math.random() * 3)))) roles[k] = 1;
+    room -= Object.values(roles).reduce((a, b) => a + b, 0) - wolves - 1;
+    if (n >= 8 && room > 0 && Math.random() < 0.6) (roles[pick(['minion', 'sorceress'])] = 1), room--;
+    if (n >= 9 && room > 0 && Math.random() < 0.3) roles.tanner = 1;
+    return roles;
+  }
+  // chaos: as many different specials as the table holds
+  for (const k of shuffle(SPECIALS.filter((k) => k !== 'werewolf' && k !== 'seer'))) {
+    if (room <= 0) break;
+    roles[k] = 1;
+    room--;
+  }
+  return roles;
+}
+
 function setupProblem(room) {
   const n = room.players.length;
   const r = room.settings.roles;
@@ -106,7 +136,17 @@ function createRoom(hostName, profile) {
     hostId: null,
     players: [],
     conns: new Set(),
-    settings: { roles: suggestedRoles(MIN_PLAYERS), autoRoles: true, dayTime: 180, voteTime: 60, revealOnDeath: true },
+    settings: {
+      roles: suggestedRoles(MIN_PLAYERS),
+      autoRoles: true,
+      preset: 'classic',
+      dayTime: 180,
+      voteTime: 60,
+      nightTime: 45,
+      trial: true,
+      trialTime: 30,
+      revealOnDeath: true,
+    },
     phase: 'lobby',
     phaseEndsAt: null,
     chat: [],
@@ -211,6 +251,8 @@ function startGame(room) {
   });
   room.lovers = null;
   room.silenced = null;
+  room.history = [];
+  room.accused = [];
   room.gameNo = (room.gameNo || 0) + 1;
   room.rolesInGame = deck.reduce((m, r) => ((m[r] = (m[r] || 0) + 1), m), {});
   room.day = 0;
@@ -232,7 +274,7 @@ function startNight(room) {
   room.announcement = null;
   room.silenced = null;
   room.verdict = null;
-  setPhase(room, 'night');
+  setPhase(room, 'night', room.settings.nightTime, () => maybeFinishMainNight(room, true));
 }
 
 // What a living player does at night. Everyone taps something, so nobody can
@@ -310,7 +352,7 @@ function maybeFinishMainNight(room, force = false) {
     if (!witch || (!room.witch.heal && !room.witch.poison)) {
       setPhase(room, 'night', 4 + Math.floor(Math.random() * 4), () => resolveNight(room));
     } else {
-      setPhase(room, 'night');
+      setPhase(room, 'night', 30, () => resolveNight(room));
     }
   } else {
     resolveNight(room);
@@ -332,11 +374,37 @@ function witchAct(room, p, { save, poison }) {
   resolveNight(room);
 }
 
+// What everyone did tonight, kept for the end-of-game timeline.
+function recordNight(room) {
+  const n = room.night;
+  const events = [];
+  const wolves = [];
+  for (const p of room.players) {
+    const a = n.acts[p.id];
+    if (!a) continue;
+    if (p.role === 'werewolf') wolves.push({ by: p.id, target: a.target });
+    if (p.role === 'seer' && a.target) events.push({ type: 'seer', by: p.id, target: a.target, wolf: looksLikeWolf(byId(room, a.target)) });
+    if (p.role === 'sorceress' && a.target) events.push({ type: 'sorceress', by: p.id, target: a.target, seer: byId(room, a.target).role === 'seer' });
+    if (p.role === 'bodyguard' && a.target) events.push({ type: 'guard', by: p.id, target: a.target });
+    if (p.role === 'spellcaster' && a.target) events.push({ type: 'silence', by: p.id, target: a.target });
+    if (p.role === 'cupid' && a.targets) events.push({ type: 'cupid', by: p.id, targets: a.targets });
+  }
+  if (wolves.length) events.unshift({ type: 'bite', picks: wolves, target: n.wolfTarget });
+  const witch = room.players.find((p) => p.role === 'witch');
+  if (n.witchAct?.save) events.push({ type: 'heal', by: witch?.id, target: n.wolfTarget });
+  if (n.witchAct?.poison) events.push({ type: 'poison', by: witch?.id, target: n.witchAct.poison });
+  const entry = { kind: 'night', night: room.day, events, deaths: [] };
+  room.history.push(entry);
+  return entry;
+}
+
 function resolveNight(room) {
   const n = room.night;
+  const entry = recordNight(room);
   const deaths = [];
   const target = n.wolfTarget && byId(room, n.wolfTarget);
   const saved = n.witchAct?.save;
+  if (target && target.id === n.guardTarget) entry.events.push({ type: 'guarded', target: target.id });
   // A tough guy bitten last night holds on for one day, then dies tonight
   // whatever anyone does.
   for (const p of alivePlayers(room)) if (p.doomNight === room.day) deaths.push(p.id);
@@ -345,8 +413,10 @@ function resolveNight(room) {
     if (target.role === 'cursed') {
       target.role = 'werewolf';
       target.wasCursed = true;
+      entry.events.push({ type: 'cursed', target: target.id });
     } else if (target.role === 'toughguy' && !target.doomNight) {
       target.doomNight = room.day + 1;
+      entry.events.push({ type: 'wound', target: target.id });
     } else {
       deaths.push(target.id);
     }
@@ -362,6 +432,7 @@ function resolveNight(room) {
   room.announcement.silenced = room.silenced;
   if (room.silenced) log(room, `หมอผีสาปให้ ${silenced.name} พูดไม่ได้ตลอดวันนี้`, 'calm');
   processDeaths(room, deaths, 'day');
+  entry.deaths = room.announcement.deaths;
 }
 
 // Kills a player and, through Cupid's bond, their lover. Returns everyone who died.
@@ -398,7 +469,7 @@ function hunterShoot(room, p, target) {
     const t = byId(room, target);
     if (!t || !t.alive || t.id === p.id) throw new Error('เลือกเป้าหมายนี้ไม่ได้');
     log(room, `${p.name} นายพรานยิง ${t.name} ก่อนสิ้นใจ`, 'death');
-    kill(room, t.id);
+    room.history.push({ kind: 'shot', day: room.day, by: p.id, target: t.id, deaths: kill(room, t.id) });
     room.hunter.shot = t.id;
     if (room.announcement) room.announcement.hunterShot = t.id;
   } else {
@@ -424,7 +495,42 @@ function afterDeaths(room, next) {
 }
 
 function startDay(room) {
-  setPhase(room, 'day', room.settings.dayTime, () => startVote(room));
+  room.accused = [];
+  setPhase(room, 'day', room.settings.dayTime, () => endDiscussion(room));
+}
+
+// With trials on, the table names suspects and hears them out before voting,
+// as at a real table; otherwise discussion goes straight to the vote.
+function endDiscussion(room) {
+  if (!room.settings.trial) return startVote(room);
+  room.nominations = {};
+  setPhase(room, 'accuse', room.settings.trialTime, () => closeAccuse(room));
+}
+
+function nominate(room, p, target) {
+  if (room.phase !== 'accuse' || !p.alive) throw new Error('ตอนนี้กล่าวหาไม่ได้');
+  if (target !== 'skip') {
+    const t = byId(room, target);
+    if (!t || !t.alive || t.id === p.id) throw new Error('กล่าวหาคนนี้ไม่ได้');
+  }
+  room.nominations[p.id] = target;
+  if (alivePlayers(room).every((x) => room.nominations[x.id])) closeAccuse(room);
+}
+
+// The most-named players (up to three on a tie) stand trial.
+function closeAccuse(room) {
+  const counts = {};
+  for (const t of Object.values(room.nominations)) if (t !== 'skip') counts[t] = (counts[t] || 0) + 1;
+  const max = Math.max(0, ...Object.values(counts));
+  room.accused = max > 0 ? shuffle(Object.keys(counts).filter((k) => counts[k] === max)).slice(0, 3) : [];
+  if (!room.accused.length) {
+    log(room, `วันที่ ${room.day}: ไม่มีใครถูกกล่าวหา วันนี้ไม่มีการประหาร`, 'calm');
+    room.verdict = { day: room.day, votes: {}, tally: {}, eliminated: null, noAccused: true, killed: [] };
+    room.history.push({ kind: 'day', day: room.day, accused: [], votes: {}, tally: {}, eliminated: null });
+    return setPhase(room, 'verdict', 6, () => finishVerdict(room));
+  }
+  log(room, `วันที่ ${room.day}: ${room.accused.map((id) => byId(room, id).name).join(', ')} ถูกกล่าวหาและขึ้นแก้ตัว`, 'info');
+  setPhase(room, 'defense', room.settings.trialTime, () => startVote(room));
 }
 
 function startVote(room) {
@@ -437,6 +543,7 @@ function castVote(room, p, target) {
   if (target !== 'skip') {
     const t = byId(room, target);
     if (!t || !t.alive || t.id === p.id) throw new Error('โหวตคนนี้ไม่ได้');
+    if (room.settings.trial && !room.accused.includes(t.id)) throw new Error('โหวตได้เฉพาะผู้ต้องหา');
   }
   room.votes[p.id] = target;
   if (alivePlayers(room).every((x) => room.votes[x.id])) tallyVotes(room);
@@ -466,7 +573,10 @@ function tallyVotes(room) {
   } else {
     log(room, `วันที่ ${room.day}: ${top.length > 1 ? 'คะแนนเสมอ' : 'หมู่บ้านไม่ประหารใคร'} วันนี้ไม่มีใครถูกประหาร`, 'calm');
   }
-  setPhase(room, 'verdict', 12, () => finishVerdict(room));
+  const v = room.verdict;
+  room.history.push({ kind: 'day', day: room.day, accused: [...room.accused], votes: v.votes, tally: v.tally, eliminated: v.eliminated, princeSaved: v.princeSaved, killed: v.killed });
+  // Someone voted out gets a moment for last words.
+  setPhase(room, 'verdict', v.killed.length ? 20 : 10, () => finishVerdict(room));
 }
 
 function finishVerdict(room) {
@@ -514,6 +624,10 @@ function advance(room) {
       if (room.night.step === 'main') return maybeFinishMainNight(room, true);
       return resolveNight(room);
     case 'day':
+      return endDiscussion(room);
+    case 'accuse':
+      return closeAccuse(room);
+    case 'defense':
       return startVote(room);
     case 'vote':
       return tallyVotes(room);
@@ -531,6 +645,7 @@ function advance(room) {
 
 function chatChannel(room, p) {
   if (room.phase === 'lobby' || room.phase === 'end') return 'all';
+  if (room.phase === 'verdict' && room.verdict?.eliminated === p.id && !p.alive && !room.verdict.lastWords) return 'last';
   if (!p.alive) return 'ghost';
   if (room.phase === 'night') return p.role === 'werewolf' ? 'wolf' : null;
   if (room.silenced === p.id) return null;
@@ -538,7 +653,7 @@ function chatChannel(room, p) {
 }
 
 function canReadChat(room, me, m) {
-  if (m.ch === 'all') return true;
+  if (m.ch === 'all' || m.ch === 'last') return true;
   const settled = room.phase === 'lobby' || room.phase === 'end' || m.game !== (room.gameNo || 0);
   if (settled) return true;
   if (!me.alive) return true; // the dead see every channel
@@ -553,8 +668,29 @@ function postChat(room, p, raw) {
   const now = Date.now();
   if (now - (p.lastChat || 0) < 600) throw new Error('พิมพ์ช้าลงหน่อย');
   p.lastChat = now;
-  room.chat.push({ id: ++room.chatSeq, ch, from: p.id, text, at: now, game: room.gameNo || 0 });
+  room.chat.push({ id: ++room.chatSeq, ch, from: p.id, text, at: now, game: room.gameNo || 0, reactions: {} });
   if (room.chat.length > 300) room.chat.splice(0, room.chat.length - 300);
+  if (ch === 'last') {
+    room.verdict.lastWords = text;
+    const day = room.history.findLast((h) => h.kind === 'day');
+    if (day) day.lastWords = text;
+  }
+}
+
+const REACTIONS = ['👍', '😂', '😮', '😡', '🐺', '❤️'];
+
+// Players react only where they could speak, so the dead and the silenced
+// can't signal the living through emoji.
+function react(room, p, id, emoji) {
+  const m = room.chat.find((x) => x.id === id);
+  if (!m || !REACTIONS.includes(emoji) || !canReadChat(room, p, m)) throw new Error('กดตอบข้อความนี้ไม่ได้');
+  const open = room.phase === 'lobby' || room.phase === 'end';
+  if (!open && chatChannel(room, p) !== m.ch) throw new Error('ตอนนี้คุณกดตอบข้อความนี้ไม่ได้');
+  const who = (m.reactions[emoji] ||= []);
+  const i = who.indexOf(p.id);
+  if (i >= 0) who.splice(i, 1);
+  else who.push(p.id);
+  if (!who.length) delete m.reactions[emoji];
 }
 
 // ---------- bots ----------
@@ -607,8 +743,22 @@ function botMove(room, p) {
         p.chatDay = room.day;
         if (Math.random() < 0.4) postChat(room, p, botLine(room, p));
       };
+    case 'accuse': {
+      if (!p.alive || room.nominations[p.id]) return null;
+      const others = alivePlayers(room).filter((x) => x.id !== p.id);
+      return () => nominate(room, p, botSuspect(room, p, others, room.nominations, 0.15));
+    }
+    case 'defense':
+      if (!p.alive || !room.accused.includes(p.id) || p.defendDay === room.day) return null;
+      return () => {
+        p.defendDay = room.day;
+        postChat(room, p, pick(DEFENSE_LINES));
+      };
     case 'vote':
       return p.alive && !room.votes[p.id] ? () => castVote(room, p, botVote(room, p)) : null;
+    case 'verdict':
+      if (room.verdict?.eliminated !== p.id || p.alive || room.verdict.lastWords) return null;
+      return () => postChat(room, p, pick(LAST_LINES));
     case 'hunter':
       return room.hunter?.id === p.id ? () => hunterShoot(room, p, botShot(room, p)) : null;
   }
@@ -644,25 +794,40 @@ function botWitch(room, p) {
 }
 
 function botVote(room, p) {
-  const others = alivePlayers(room).filter((x) => x.id !== p.id);
+  let others = alivePlayers(room).filter((x) => x.id !== p.id);
+  if (room.settings.trial) others = others.filter((x) => room.accused.includes(x.id));
+  return botSuspect(room, p, others, room.votes);
+}
+
+// Picks someone to accuse or vote for out of `others`, given the ballots so far.
+function botSuspect(room, p, others, ballots, skipRate = 0.08) {
   let pool = others;
   if (p.role === 'werewolf' || p.role === 'minion') pool = others.filter((x) => x.role !== 'werewolf');
   if (room.lovers?.includes(p.id)) pool = pool.filter((x) => !room.lovers.includes(x.id));
   if (p.role === 'seer') {
-    const wolf = p.seerResults.find((r) => r.isWolf && byId(room, r.id)?.alive);
+    const wolf = p.seerResults.find((r) => r.isWolf && others.some((x) => x.id === r.id));
     if (wolf) return wolf.id;
     const clean = new Set(p.seerResults.filter((r) => !r.isWolf).map((r) => r.id));
-    pool = others.filter((x) => !clean.has(x.id));
+    pool = pool.filter((x) => !clean.has(x.id));
   }
   if (!pool.length) return 'skip';
-  if (ROLES[p.role].team !== 'wolf' && Math.random() < 0.08) return 'skip';
+  if (ROLES[p.role].team !== 'wolf' && Math.random() < skipRate) return 'skip';
   // Half the time, side with whoever already has the most votes.
   const tally = {};
-  for (const v of Object.values(room.votes)) if (pool.some((x) => x.id === v)) tally[v] = (tally[v] || 0) + 1;
+  for (const v of Object.values(ballots)) if (pool.some((x) => x.id === v)) tally[v] = (tally[v] || 0) + 1;
   const leader = Object.keys(tally).sort((a, b) => tally[b] - tally[a])[0];
   if (leader && Math.random() < 0.5) return leader;
   return pick(pool).id;
 }
+
+const DEFENSE_LINES = [
+  'ฉันไม่ใช่หมาป่านะ! เชื่อฉันสิ',
+  'ถ้าประหารฉัน หมู่บ้านจะเสียคนดีไปหนึ่งคน',
+  'ลองคิดดูดี ๆ ใครกันแน่ที่เงียบผิดปกติ',
+  'ฉันเป็นชาวบ้าน สาบานได้',
+];
+
+const LAST_LINES = ['จำไว้นะ พวกเธอฆ่าคนบริสุทธิ์', 'ขอให้หมู่บ้านโชคดี…', 'ระวังคนที่โหวตฉันคนแรกให้ดี', 'ไม่เป็นไร ฉันไปก่อนนะ'];
 
 const BOT_LINES = [
   'ฉันว่า {n} ดูแปลก ๆ นะ',
@@ -714,7 +879,7 @@ function viewFor(room, me) {
       isHost: p.id === room.hostId,
       role: inGame && seeRole ? p.role : null,
       ready: room.phase === 'reveal' ? room.ready.has(p.id) : undefined,
-      voted: room.phase === 'vote' ? !!room.votes[p.id] : undefined,
+      voted: room.phase === 'vote' ? !!room.votes[p.id] : room.phase === 'accuse' ? !!room.nominations[p.id] : undefined,
       acted: ghost && room.phase === 'night' ? !!room.night.acts[p.id] : undefined,
       lover: inGame && seeLove ? true : undefined,
       silenced: room.silenced === p.id || undefined,
@@ -741,7 +906,10 @@ function viewFor(room, me) {
     players,
   };
 
-  view.chat = room.chat.filter((m) => canReadChat(room, me, m)).slice(-120);
+  view.chat = room.chat
+    .filter((m) => canReadChat(room, me, m))
+    .slice(-120)
+    .map(({ reactions, ...m }) => ({ ...m, reactions: Object.entries(reactions || {}).map(([e, ids]) => [e, ids.length, ids.includes(me.id)]) }));
   view.chatChannel = chatChannel(room, me);
 
   if (room.phase === 'reveal') view.reveal = { readyCount: room.ready.size, total: room.players.length, iAmReady: room.ready.has(me.id) };
@@ -790,6 +958,13 @@ function viewFor(room, me) {
       total: alivePlayers(room).length,
     };
   }
+  if (room.phase === 'accuse') {
+    const counts = {};
+    for (const t of Object.values(room.nominations)) if (t !== 'skip') counts[t] = (counts[t] || 0) + 1;
+    view.trial = { counts, mine: room.nominations[me.id] || null, count: Object.keys(room.nominations).length, total: alivePlayers(room).length };
+  }
+  if (['defense', 'vote', 'verdict'].includes(room.phase)) view.accused = room.accused;
+  if (ended) view.room.history = room.history;
   if (room.phase === 'verdict' || (room.verdict && ['hunter', 'end'].includes(room.phase))) view.verdict = room.verdict;
   if (room.phase === 'hunter') view.hunter = { id: room.hunter.id, isMe: room.hunter.id === me.id };
 
@@ -830,12 +1005,23 @@ function handleAction(room, p, body) {
           if (b.roles[k] !== undefined) s.roles[k] = Math.max(0, Math.min(ROLES[k].max, Math.floor(b.roles[k]) || 0));
         }
         s.autoRoles = false;
+        s.preset = null;
       }
       if (b.autoRoles) {
         s.autoRoles = true;
+        s.preset = 'classic';
         s.roles = suggestedRoles(Math.max(MIN_PLAYERS, room.players.length));
       }
       if (b.dayTime) s.dayTime = Math.max(30, Math.min(600, Math.floor(b.dayTime)));
+      if (b.nightTime) s.nightTime = Math.max(20, Math.min(180, Math.floor(b.nightTime)));
+      if (b.trialTime) s.trialTime = Math.max(15, Math.min(120, Math.floor(b.trialTime)));
+      if (b.trial !== undefined) s.trial = !!b.trial;
+      if (b.preset !== undefined) {
+        if (!PRESETS.includes(b.preset)) throw new Error('ไม่รู้จักชุดบทบาทนี้');
+        s.roles = presetRoles(b.preset, Math.max(MIN_PLAYERS, room.players.length));
+        s.autoRoles = b.preset === 'classic';
+        s.preset = b.preset;
+      }
       if (b.voteTime) s.voteTime = Math.max(15, Math.min(180, Math.floor(b.voteTime)));
       if (b.revealOnDeath !== undefined) s.revealOnDeath = !!b.revealOnDeath;
       return;
@@ -909,6 +1095,10 @@ function handleAction(room, p, body) {
       return witchAct(room, p, body);
     case 'vote':
       return castVote(room, p, body.target);
+    case 'accuse':
+      return nominate(room, p, body.target);
+    case 'react':
+      return react(room, p, Number(body.id), String(body.emoji || ''));
     case 'shoot':
       return hunterShoot(room, p, body.target || null);
     case 'advance':
@@ -1056,4 +1246,4 @@ function start() {
 if (require.main === module) start();
 
 // Game rules exposed for test/rules.test.js.
-module.exports = { start, rooms, createRoom, addPlayer, startGame, startNight, nightAct, witchAct, castVote, finishVerdict, advance, viewFor, byId };
+module.exports = { start, rooms, createRoom, addPlayer, startGame, startNight, nightAct, witchAct, castVote, finishVerdict, advance, viewFor, byId, nominate, postChat, chatChannel, react, presetRoles };

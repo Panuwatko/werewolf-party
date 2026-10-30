@@ -103,6 +103,12 @@ const ROLE_SHORT = {
   villager: 'คำนวณจากจำนวนผู้เล่นที่เหลือ',
   tanner: 'ชนะถ้าถูกโหวตประหาร',
 };
+const PRESETS = [
+  ['beginner', 'มือใหม่', 'หมาป่า ผู้หยั่งรู้ บอดี้การ์ด และชาวบ้าน เหมาะกับวงที่เพิ่งเล่นครั้งแรก'],
+  ['classic', 'คลาสสิก', 'บทมาตรฐานตามจำนวนคน เพิ่มบทพิเศษเมื่อคนเยอะขึ้น'],
+  ['random', 'สุ่มสมดุล', 'หมาป่า ผู้หยั่งรู้ และสุ่มบทพิเศษฝ่ายหมู่บ้าน 2–4 บท อาจมีสมุนหรือคนเบื่อโลก'],
+  ['chaos', 'วุ่นวาย', 'ใส่บทพิเศษให้มากที่สุดเท่าที่จำนวนคนรับไหว เหลือชาวบ้านธรรมดา 1 คน'],
+];
 const ROLE_GROUPS = [
   ['ฝ่ายหมู่บ้าน', ['seer', 'bodyguard', 'witch', 'hunter', 'cupid', 'prince', 'mayor', 'spellcaster', 'lycan', 'cursed', 'toughguy', 'villager']],
   ['ฝ่ายหมาป่า', ['werewolf', 'minion', 'sorceress']],
@@ -186,6 +192,116 @@ function toast(msg) {
   toastTimer = setTimeout(() => ($toast.hidden = true), 3200);
 }
 
+// ---------- sound ----------
+// Effects and ambience synthesized with Web Audio, so there are no files to
+// load. Off until the player turns it on (browsers need a tap first).
+
+const Sound = (() => {
+  let ctx = null;
+  let on = store.get('ww.sound') === true;
+  let scene = null;
+
+  function ac() {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+
+  function tone({ type = 'sine', f0, f1 = f0, dur = 0.5, gain = 0.12, at = 0, attack = 0.02 }) {
+    const c = ac();
+    const t = c.currentTime + at;
+    const o = c.createOscillator();
+    const g = c.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain, t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(c.destination);
+    o.start(t);
+    o.stop(t + dur + 0.05);
+  }
+
+  const fx = {
+    // A wolf howl: rising, held with vibrato, then falling away.
+    howl() {
+      const c = ac();
+      const t = c.currentTime;
+      const o = c.createOscillator();
+      const lfo = c.createOscillator();
+      const depth = c.createGain();
+      const filter = c.createBiquadFilter();
+      const g = c.createGain();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(320, t);
+      o.frequency.linearRampToValueAtTime(610, t + 0.7);
+      o.frequency.linearRampToValueAtTime(560, t + 2);
+      o.frequency.linearRampToValueAtTime(360, t + 2.8);
+      lfo.frequency.value = 5.5;
+      depth.gain.value = 10;
+      lfo.connect(depth).connect(o.frequency);
+      filter.type = 'lowpass';
+      filter.frequency.value = 1400;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.09, t + 0.5);
+      g.gain.setValueAtTime(0.08, t + 2);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 3);
+      o.connect(filter).connect(g).connect(c.destination);
+      o.start(t);
+      lfo.start(t);
+      o.stop(t + 3.1);
+      lfo.stop(t + 3.1);
+    },
+    dawn: () => [523, 659, 784, 1047].forEach((f, i) => tone({ f0: f, dur: 1.4, gain: 0.07, at: i * 0.14 })),
+    death: () => tone({ f0: 130, f1: 45, dur: 0.9, gain: 0.25 }),
+    drum: () => [0, 0.2, 0.4].forEach((at) => tone({ type: 'triangle', f0: 160, f1: 55, dur: 0.28, gain: 0.2, at })),
+    win: () => [523, 659, 784, 1047, 1319].forEach((f, i) => tone({ type: 'triangle', f0: f, dur: 0.55, gain: 0.09, at: i * 0.11 })),
+    lose: () => [392, 330, 262, 196].forEach((f, i) => tone({ type: 'triangle', f0: f, dur: 0.7, gain: 0.09, at: i * 0.2 })),
+    pop: () => tone({ f0: 880, f1: 1250, dur: 0.09, gain: 0.04 }),
+  };
+
+  // Crickets at night, birds by day, at a gentle volume.
+  function ambient() {
+    if (on && ctx && scene) {
+      if (scene === 'night') for (let i = 0; i < 3; i++) tone({ f0: 4400, f1: 4250, dur: 0.045, gain: 0.012, at: i * 0.075 });
+      else {
+        tone({ f0: 2300 + Math.random() * 700, f1: 3700 + Math.random() * 800, dur: 0.14, gain: 0.018 });
+        tone({ f0: 3100, f1: 2500, dur: 0.12, gain: 0.014, at: 0.2 });
+      }
+    }
+    setTimeout(ambient, scene === 'night' ? 1200 + Math.random() * 1800 : 3500 + Math.random() * 4000);
+  }
+  ambient();
+
+  // A saved "on" setting needs one tap on the page before audio may start.
+  document.addEventListener('pointerdown', () => on && ac(), { once: true });
+
+  return {
+    get on() {
+      return on;
+    },
+    toggle() {
+      on = !on;
+      store.set('ww.sound', on);
+      if (on) {
+        ac();
+        fx.pop();
+      }
+      return on;
+    },
+    play(name) {
+      if (!on || !ctx) return;
+      try {
+        fx[name]();
+      } catch {}
+    },
+    scene(s) {
+      scene = s;
+    },
+  };
+})();
+
 // ---------- state ----------
 
 // Each tab plays as its own player (sessionStorage); localStorage keeps the
@@ -266,6 +382,7 @@ function leaveLocal() {
   history.replaceState(null, '', location.pathname);
   document.body.dataset.time = 'night';
   closeChat();
+  Sound.scene(null);
   render();
 }
 
@@ -279,7 +396,7 @@ function onView(v) {
   if (key !== S.stageKey) {
     const first = !S.stageKey;
     S.stageKey = key;
-    S.sel = v.night?.action?.chosen ?? v.vote?.mine ?? null;
+    S.sel = v.night?.action?.chosen ?? v.vote?.mine ?? v.trial?.mine ?? null;
     S.pair = [...(v.night?.action?.chosenPair || [])];
     S.witchSave = false;
     S.flipped = false;
@@ -312,33 +429,51 @@ function onStageChange(v) {
   const { phase, day, announcement } = v.room;
   if (phase === 'night' && v.night?.step === 'main') {
     if (navigator.userActivation?.hasBeenActive) navigator.vibrate?.(200);
+    Sound.play('howl');
     speak(`ค่ำคืนที่ ${day} มาถึงแล้ว ทุกคนหลับตา ผู้ที่มีพลังพิเศษ ตื่นขึ้นมาทำหน้าที่ของตัวเองบนมือถือ`);
   } else if (phase === 'night' && v.night?.step === 'witch') {
     speak('แม่มด ตื่นขึ้นมา คืนนี้จะใช้ยาหรือไม่');
   } else if (phase === 'day') {
     const deaths = announcement?.deaths || [];
+    Sound.play('dawn');
+    if (deaths.length) setTimeout(() => Sound.play('death'), 900);
     speak(
       `รุ่งเช้าแล้ว ทุกคนลืมตา ` +
         (deaths.length ? `เมื่อคืน ${deaths.map((id) => nameOf(v, id)).join(' และ ')} ถูกพบเป็นศพ` : 'เมื่อคืนสงบสุข ไม่มีใครตาย') +
         ' เริ่มถกเถียงกันได้',
     );
+  } else if (phase === 'accuse') {
+    Sound.play('drum');
+    speak('หมดเวลาถกเถียง ชี้ตัวคนที่คุณสงสัยที่สุด');
+  } else if (phase === 'defense') {
+    speak(`${v.accused.map((id) => nameOf(v, id)).join(' และ ')} ถูกกล่าวหา ขอให้แก้ตัว`);
   } else if (phase === 'vote') {
-    speak('หมดเวลาถกเถียง ได้เวลาลงมติ โหวตคนที่คิดว่าเป็นหมาป่า');
+    Sound.play('drum');
+    speak(v.room.settings.trial ? 'ได้เวลาลงมติ จะประหารผู้ต้องหาหรือไม่' : 'หมดเวลาถกเถียง ได้เวลาลงมติ โหวตคนที่คิดว่าเป็นหมาป่า');
   } else if (phase === 'verdict') {
     const out = v.verdict?.eliminated;
-    speak(out ? `หมู่บ้านลงมติประหาร ${nameOf(v, out)}` : 'วันนี้ไม่มีใครถูกประหาร');
+    if (v.verdict?.killed?.length) Sound.play('death');
+    speak(v.verdict?.noAccused ? 'ไม่มีใครถูกกล่าวหา วันนี้ไม่มีการประหาร' : out ? `หมู่บ้านลงมติประหาร ${nameOf(v, out)}` : 'วันนี้ไม่มีใครถูกประหาร');
   } else if (phase === 'hunter') {
+    Sound.play('death');
     speak(`นายพราน ${nameOf(v, v.hunter.id)} ล้มลง แต่ยังมีแรงยิงอีกหนึ่งนัด`);
   } else if (phase === 'end') {
+    Sound.play(iWon(v) ? 'win' : 'lose');
     speak(`เกมจบแล้ว ${WIN[v.room.winner][1]}`);
   }
+}
+
+function iWon(v) {
+  const r = v.me.role;
+  const w = v.room.winner;
+  return w === 'wolf' ? WOLF_TEAM.includes(r) : w === 'tanner' ? r === 'tanner' : !WOLF_TEAM.includes(r) && r !== 'tanner';
 }
 
 // ---------- render: shared pieces ----------
 
 function timeOf(v) {
   const { phase, winner } = v.room;
-  if (['day', 'vote', 'verdict', 'hunter'].includes(phase)) return 'day';
+  if (['day', 'accuse', 'defense', 'vote', 'verdict', 'hunter'].includes(phase)) return 'day';
   if (phase === 'end') return winner === 'village' ? 'day' : 'night';
   return 'night';
 }
@@ -402,7 +537,7 @@ function token(p, v, o = {}) {
   if (inGame && p.role && !hideOwn) tag = `<span class="tag role">${ROLE[p.role].name}</span>`;
   if (!p.alive) tag = `<span class="tag">${p.role ? ROLE[p.role].name + ' · ' : ''}เสียชีวิต</span>`;
   else if (p.ready) tag += `<span class="tag">พร้อมแล้ว</span>`;
-  else if (p.voted) tag += `<span class="tag">โหวตแล้ว</span>`;
+  else if (p.voted) tag += `<span class="tag">${v.room.phase === 'accuse' ? 'ชี้ตัวแล้ว' : 'โหวตแล้ว'}</span>`;
   if (!p.connected) tag += `<span class="tag">หลุดการเชื่อมต่อ</span>`;
   if (p.isHost && !inGame) tag += `<span class="tag host">หัวห้อง</span>`;
   if (p.bot) tag += `<span class="tag">บอท</span>`;
@@ -445,12 +580,15 @@ function topbar(v) {
     night: [`คืนที่ ${day}`, 'หมู่บ้านหลับใหล'],
     hunter: ['นายพรานเล็งปืน', `วันที่ ${day}`],
     day: [`วันที่ ${day}`, 'ถกเถียงหาตัวหมาป่า'],
+    accuse: ['กล่าวหา', `วันที่ ${day} · ชี้ตัวผู้ต้องสงสัย`],
+    defense: ['ผู้ต้องหาแก้ตัว', `วันที่ ${day}`],
     vote: [`ลงมติ วันที่ ${day}`, 'เลือกคนที่จะประหาร'],
     verdict: ['ผลการลงมติ', `วันที่ ${day}`],
     end: ['จบเกม', `เล่นไป ${day} วัน`],
   };
   const [title, sub] = titles[phase] || ['', ''];
-  const showTimer = phaseEndsAt && phase !== 'night';
+  // At night only the main step's clock is public; the witch's pause stays hidden.
+  const showTimer = phaseEndsAt && (phase !== 'night' || v.night?.step === 'main' || v.night?.witch);
   return `
   <header class="topbar">
     <div>
@@ -459,8 +597,9 @@ function topbar(v) {
     </div>
     <div class="timer" ${showTimer ? `data-ends="${phaseEndsAt}"` : ''}></div>
     <div class="tools" style="grid-column: 1 / -1">
-      ${v.me.role ? '<button class="chip-btn" data-peek>กดค้างดูบทบาท</button>' : ''}
-      <button class="chip-btn" data-do="narrator" aria-pressed="${S.narrator}">เสียงผู้ดำเนินเกม</button>
+      ${v.me.role ? '<button class="chip-btn" data-peek title="กดค้างไว้เพื่อดูบทบาท">กดค้างดูบทบาท</button>' : ''}
+      <button class="chip-btn" data-do="narrator" aria-pressed="${S.narrator}" title="อ่านประกาศเป็นเสียงพูด">ผู้บรรยาย</button>
+      <button class="chip-btn" data-do="sound" aria-pressed="${Sound.on}" title="เสียงหมาป่าหอน จิ้งหรีด นกร้อง">เสียงประกอบ</button>
     </div>
   </header>`;
 }
@@ -493,6 +632,7 @@ function render() {
     return;
   }
   document.body.dataset.time = timeOf(v);
+  Sound.scene(v.room.phase === 'lobby' ? null : timeOf(v));
   if (v.room.phase === 'lobby') renderLobby(v);
   else renderGame(v);
   tick();
@@ -562,7 +702,7 @@ function renderLobby(v) {
   const url = joinUrl(v);
   const sel = (id, value, opts, unit) =>
     `<select id="${id}" class="input" style="width:auto;min-height:40px;padding:6px 10px" ${host ? '' : 'disabled'}>${opts
-      .map((o) => `<option value="${o}" ${o === value ? 'selected' : ''}>${o >= 60 && unit === 'min' ? `${o / 60} นาที` : `${o} วินาที`}</option>`)
+      .map((o) => `<option value="${o}" ${o === value ? 'selected' : ''}>${o >= 60 && unit === 'min' && o % 60 === 0 ? `${o / 60} นาที` : `${o} วินาที`}</option>`)
       .join('')}</select>`;
 
   const roleRow = (k) => {
@@ -608,9 +748,20 @@ function renderLobby(v) {
       <h2>ตั้งค่าเกม</h2>
       ${host ? `<button class="btn ghost" data-do="auto" ${s.autoRoles ? 'disabled' : ''}>${s.autoRoles ? 'จัดตามจำนวนคนอยู่' : 'จัดบทบาทอัตโนมัติ'}</button>` : ''}
     </div>
+    <div class="stack" style="gap:6px">
+      <span class="eyebrow">ชุดบทบาทสำเร็จรูป</span>
+      <div class="row preset-row">${PRESETS.map(
+        ([k, label, hint]) =>
+          `<button class="chip-btn" data-do="preset" data-v="${k}" aria-pressed="${s.preset === k}" title="${hint}" ${host ? '' : 'disabled'}>${label}</button>`,
+      ).join('')}</div>
+      <p class="small muted">${(PRESETS.find(([k]) => k === s.preset) || [, , 'ปรับบทบาทเองด้านล่าง'])[2]}</p>
+    </div>
     ${ROLE_GROUPS.map(([team, keys]) => `<div class="setup"><span class="eyebrow">${team}</span>${keys.map(roleRow).join('')}</div>`).join('')}
     <div class="row spread"><label for="dayTime">เวลาถกเถียงกลางวัน</label>${sel('dayTime', s.dayTime, [60, 120, 180, 240, 300, 420], 'min')}</div>
     <div class="row spread"><label for="voteTime">เวลาโหวต</label>${sel('voteTime', s.voteTime, [30, 45, 60, 90, 120], 'sec')}</div>
+    <div class="row spread"><label for="nightTime">เวลากลางคืน</label>${sel('nightTime', s.nightTime, [30, 45, 60, 90, 120], 'sec')}</div>
+    <label class="toggle"><input type="checkbox" id="trial" ${s.trial ? 'checked' : ''} ${host ? '' : 'disabled'}> มีขั้นกล่าวหาและแก้ตัวก่อนโหวต</label>
+    ${s.trial ? `<div class="row spread"><label for="trialTime">เวลากล่าวหา / แก้ตัว (ต่อขั้น)</label>${sel('trialTime', s.trialTime, [20, 30, 45, 60, 90], 'sec')}</div>` : ''}
     <label class="toggle"><input type="checkbox" id="revealOnDeath" ${s.revealOnDeath ? 'checked' : ''} ${host ? '' : 'disabled'}> เปิดเผยบทบาทเมื่อผู้เล่นตาย</label>
     ${v.room.setupProblem ? `<p class="warn">${esc(v.room.setupProblem)}</p>` : ''}
     ${
@@ -650,6 +801,10 @@ function phasePanel(v) {
       return hunterPanel(v);
     case 'day':
       return dayPanel(v);
+    case 'accuse':
+      return accusePanel(v);
+    case 'defense':
+      return defensePanel(v);
     case 'vote':
       return votePanel(v);
     case 'verdict':
@@ -849,17 +1004,59 @@ function dayPanel(v) {
   <section class="panel">${board(v, { badges: seerBadges(v) })}</section>`;
 }
 
+function accusePanel(v) {
+  const t = v.trial;
+  const badges = seerBadges(v);
+  for (const [id, c] of Object.entries(t.counts)) badges[id] = { text: `ถูกชี้ ${c}` };
+  const progress = `<p class="muted small">กล่าวหาแล้ว ${t.count} จาก ${t.total} คน</p>`;
+  if (!v.me.alive) {
+    return `<section class="panel ${fx()}"><p class="instruction">คนที่ยังมีชีวิตกำลังชี้ตัวผู้ต้องสงสัย</p>${progress}${hostAdvance(v, 'ปิดการกล่าวหา')}</section><section class="panel">${board(v, { badges })}</section>`;
+  }
+  const opts = new Set(v.players.filter((p) => p.alive && p.id !== v.me.id).map((p) => p.id));
+  const mine = t.mine ? (t.mine === 'skip' ? 'ไม่กล่าวหาใคร' : esc(nameOf(v, t.mine))) : null;
+  return `
+  <section class="panel ${fx()}">
+    ${myNotes(v)}
+    <span class="eyebrow">ขั้นกล่าวหา</span>
+    <p class="instruction">ชี้ตัวคนที่คุณสงสัยที่สุด</p>
+    <p class="muted small">คนที่ถูกชี้มากที่สุดต้องขึ้นแก้ตัว (เสมอกันได้สูงสุด 3 คน) แล้วหมู่บ้านจะโหวตเฉพาะผู้ต้องหา</p>
+    ${mine ? `<p class="note">คุณเลือก <b>${mine}</b> แล้ว เปลี่ยนได้จนกว่าจะหมดเวลา</p>` : ''}
+    ${confirmRow('ชี้ตัวคนนี้', '<button class="btn ghost" data-do="accuse-skip">ไม่กล่าวหาใคร</button>')}
+    ${progress}
+    ${hostAdvance(v, 'ปิดการกล่าวหา')}
+  </section>
+  <section class="panel">${board(v, { selectable: opts, badges })}</section>`;
+}
+
+function defensePanel(v) {
+  const names = v.accused.map((id) => `<b>${esc(nameOf(v, id))}</b>`).join(', ');
+  const meAccused = v.accused.includes(v.me.id);
+  const badges = seerBadges(v);
+  for (const id of v.accused) badges[id] = { text: 'ผู้ต้องหา' };
+  return `
+  <section class="panel ${fx()}">
+    ${myNotes(v)}
+    <span class="eyebrow">ขั้นแก้ตัว</span>
+    <p class="instruction">${meAccused ? 'คุณถูกกล่าวหา! พิมพ์แก้ตัวในแชทให้หมู่บ้านเชื่อ' : `${names} ถูกกล่าวหา`}</p>
+    <p class="muted small">${meAccused ? 'หมดเวลาแล้วจะเข้าสู่การโหวต' : 'ฟังผู้ต้องหาแก้ตัวในแชท หมดเวลาแล้วจะเข้าสู่การโหวต'}</p>
+    ${hostAdvance(v, 'เริ่มโหวตเลย')}
+  </section>
+  <section class="panel">${board(v, { badges })}</section>`;
+}
+
 function votePanel(v) {
   const vote = v.vote;
   const progress = `<p class="muted small">โหวตแล้ว ${vote.count} จาก ${vote.total} คน</p>`;
   if (!v.me.alive) {
     return `<section class="panel ${fx()}"><p class="instruction">คนที่ยังมีชีวิตกำลังโหวต</p>${progress}${hostAdvance(v, 'ปิดโหวต')}</section><section class="panel">${board(v)}</section>`;
   }
-  const opts = new Set(v.players.filter((p) => p.alive && p.id !== v.me.id).map((p) => p.id));
+  const trial = v.room.settings.trial;
+  const opts = new Set(v.players.filter((p) => p.alive && p.id !== v.me.id && (!trial || v.accused.includes(p.id))).map((p) => p.id));
   const mine = vote.mine ? (vote.mine === 'skip' ? 'งดออกเสียง' : esc(nameOf(v, vote.mine))) : null;
   return `
   <section class="panel ${fx()}">
-    <p class="instruction">โหวตคนที่คุณคิดว่าเป็นหมาป่า</p>
+    <p class="instruction">${trial ? `โหวตประหารผู้ต้องหา: ${v.accused.map((id) => `<b>${esc(nameOf(v, id))}</b>`).join(', ')}` : 'โหวตคนที่คุณคิดว่าเป็นหมาป่า'}</p>
+    ${trial ? '<p class="muted small">ไม่อยากประหารใครให้กดงดออกเสียง ถ้างดออกเสียงชนะหรือคะแนนเสมอ วันนี้จะไม่มีใครตาย</p>' : ''}
     ${mine ? `<p class="note">คุณเลือก <b>${mine}</b> แล้ว เปลี่ยนได้จนกว่าทุกคนจะโหวตครบ</p>` : ''}
     ${confirmRow('ยืนยันโหวต', '<button class="btn ghost" data-do="vote-skip">งดออกเสียง</button>')}
     ${progress}
@@ -894,11 +1091,14 @@ function verdictPanel(v) {
   if (out && vd.princeSaved) result = `<p class="note good">หมู่บ้านลงมติประหาร <b>${esc(out.name)}</b> แต่เขาเปิดเผยว่าเป็น<b>เจ้าชาย</b> จึงรอดชีวิต</p>`;
   else if (out && vd.tannerWin) result = `<p class="note bad">หมู่บ้านประหาร <b>${esc(out.name)}</b> ซึ่งเป็น<b>คนเบื่อโลก</b> เขาชนะคนเดียว!</p>`;
   else if (out) result = `<p class="note bad">หมู่บ้านลงมติประหาร <b>${esc(out.name)}</b>${out.role ? ` · บทบาท: <b>${ROLE[out.role].name}</b>` : ''}${lovers}</p>`;
+  else if (vd.noAccused) result = '<p class="note good">ไม่มีใครถูกกล่าวหา วันนี้ไม่มีการประหาร</p>';
   else result = `<p class="note good">${vd.tie ? 'คะแนนเสมอกัน' : 'เสียงส่วนใหญ่งดออกเสียง'} วันนี้ไม่มีใครถูกประหาร</p>`;
+  if (vd.lastWords) result += `<blockquote class="last-words">“${esc(vd.lastWords)}”<cite>คำสั่งเสียของ ${esc(nameOf(v, vd.eliminated))}</cite></blockquote>`;
+  else if (vd.eliminated === v.me.id && !v.me.alive) result += '<p class="note">พิมพ์<b>คำสั่งเสีย</b>ในแชทได้ 1 ข้อความ ก่อนหมดเวลา ทุกคนจะเห็น</p>';
   return `
   <section class="panel ${fx()}">
     ${result}
-    ${tallyHtml(v)}
+    ${vd.noAccused ? '' : tallyHtml(v)}
     ${hostAdvance(v, 'ไปต่อ')}
   </section>
   <section class="panel">${board(v)}</section>`;
@@ -923,7 +1123,67 @@ function endPanel(v) {
     </div>
     ${v.me.isHost ? '<button class="btn primary block" data-do="restart">เล่นอีกรอบ (กลับห้องรอ)</button>' : '<p class="muted" style="text-align:center">รอหัวห้องเริ่มรอบใหม่…</p>'}
   </section>
-  <section class="panel"><span class="eyebrow">บทบาทของทุกคน</span>${board(v)}</section>`;
+  <section class="panel"><span class="eyebrow">บทบาทของทุกคน</span>${board(v)}</section>
+  ${timelineHtml(v)}`;
+}
+
+// The whole game replayed night by night, for the after-game chat.
+function timelineHtml(v) {
+  const h = v.room.history || [];
+  if (!h.length) return '';
+  const N = (id) => (id ? `<b>${esc(nameOf(v, id))}</b>` : 'ไม่มีใคร');
+  const list = (ids) => ids.map(N).join(', ');
+  const ev = (e) => {
+    switch (e.type) {
+      case 'bite': {
+        const same = e.picks.every((x) => x.target === e.target);
+        const who = list(e.picks.map((x) => x.by));
+        return same ? `หมาป่า ${who} เลือกกัด ${N(e.target)}` : `หมาป่าเลือก ${e.picks.map((x) => `${N(x.by)} → ${N(x.target)}`).join(' · ')} สรุปกัด ${N(e.target)}`;
+      }
+      case 'seer':
+        return `ผู้หยั่งรู้ ${N(e.by)} ส่อง ${N(e.target)} เห็นว่า${e.wolf ? 'เป็นหมาป่า' : 'ไม่ใช่หมาป่า'}`;
+      case 'sorceress':
+        return `แม่มดสายมืด ${N(e.by)} ตามหา ${N(e.target)} ${e.seer ? 'เจอผู้หยั่งรู้!' : 'ไม่ใช่ผู้หยั่งรู้'}`;
+      case 'guard':
+        return `บอดี้การ์ด ${N(e.by)} ปกป้อง ${N(e.target)}`;
+      case 'guarded':
+        return `บอดี้การ์ดกันเขี้ยวหมาป่าจาก ${N(e.target)} ไว้ได้`;
+      case 'silence':
+        return `หมอผี ${N(e.by)} สาปให้ ${N(e.target)} พูดไม่ได้`;
+      case 'cupid':
+        return `คิวปิด ${N(e.by)} จับคู่รัก ${list(e.targets)}`;
+      case 'heal':
+        return `แม่มด ${N(e.by)} ใช้ยาชุบชีวิตช่วย ${N(e.target)}`;
+      case 'poison':
+        return `แม่มด ${N(e.by)} วางยาพิษ ${N(e.target)}`;
+      case 'cursed':
+        return `${N(e.target)} ถูกกัดและกลายเป็นหมาป่า`;
+      case 'wound':
+        return `${N(e.target)} หนุ่มถึกโดนกัด แต่ยังไม่ตาย`;
+    }
+    return '';
+  };
+  const items = h.map((e) => {
+    if (e.kind === 'night') {
+      const lines = e.events.map(ev).filter(Boolean);
+      lines.push(e.deaths.length ? `<span class="death">เช้ามาพบศพ: ${list(e.deaths)}</span>` : 'เช้ามาไม่มีใครตาย');
+      return `<li class="tl-night"><span class="tl-when">คืน ${e.night}</span><div>${lines.map((l) => `<p>${l}</p>`).join('')}</div></li>`;
+    }
+    if (e.kind === 'day') {
+      const lines = [];
+      if (e.accused?.length) lines.push(`ผู้ต้องหา: ${list(e.accused)}`);
+      const votes = Object.entries(e.tally || {}).sort((a, b) => b[1] - a[1]);
+      if (votes.length) lines.push(`ผลโหวต: ${votes.map(([t, c]) => `${t === 'skip' ? 'งดออกเสียง' : N(t)} ${c}`).join(' · ')}`);
+      if (e.princeSaved) lines.push(`${N(e.eliminated)} เป็นเจ้าชาย รอดจากการประหาร`);
+      else if (e.eliminated) lines.push(`<span class="death">ประหาร ${N(e.eliminated)}${e.killed?.length > 1 ? ` (คู่รัก ${list(e.killed.slice(1))} ตายตาม)` : ''}</span>`);
+      else lines.push('ไม่มีใครถูกประหาร');
+      if (e.lastWords) lines.push(`คำสั่งเสีย: “${esc(e.lastWords)}”`);
+      return `<li class="tl-day"><span class="tl-when">วัน ${e.day}</span><div>${lines.map((l) => `<p>${l}</p>`).join('')}</div></li>`;
+    }
+    if (e.kind === 'shot') return `<li class="tl-day"><span class="tl-when">วัน ${e.day}</span><div><p class="death">นายพราน ${N(e.by)} ยิง ${N(e.target)}</p></div></li>`;
+    return '';
+  });
+  return `<section class="panel"><span class="eyebrow">สรุปเกมทีละคืน</span><ol class="timeline">${items.join('')}</ol></section>`;
 }
 
 // ---------- countdown ----------
@@ -1017,9 +1277,18 @@ $app.addEventListener('click', (e) => {
     case 'confirm':
       if (v.night?.action?.pick === 2 && v.room.phase === 'night') return S.pair.length === 2 && act('night', { targets: S.pair });
       if (!S.sel) return;
+      if (v.room.phase === 'accuse') return act('accuse', { target: S.sel });
       if (v.room.phase === 'night') return act('night', { target: S.sel });
       if (v.room.phase === 'vote') return act('vote', { target: S.sel });
       if (v.room.phase === 'hunter') return act('shoot', { target: S.sel });
+      return;
+    case 'accuse-skip':
+      S.sel = null;
+      return act('accuse', { target: 'skip' });
+    case 'preset':
+      return act('settings', { settings: { preset: b.dataset.v } });
+    case 'sound':
+      b.setAttribute('aria-pressed', Sound.toggle());
       return;
     case 'skip-night':
       return act('night', { target: null });
@@ -1048,6 +1317,9 @@ $app.addEventListener('change', (e) => {
   const t = e.target;
   if (t.id === 'dayTime') act('settings', { settings: { dayTime: Number(t.value) } });
   if (t.id === 'voteTime') act('settings', { settings: { voteTime: Number(t.value) } });
+  if (t.id === 'nightTime') act('settings', { settings: { nightTime: Number(t.value) } });
+  if (t.id === 'trialTime') act('settings', { settings: { trialTime: Number(t.value) } });
+  if (t.id === 'trial') act('settings', { settings: { trial: t.checked } });
   if (t.id === 'revealOnDeath') act('settings', { settings: { revealOnDeath: t.checked } });
   if (t.id === 'witchSave') {
     S.witchSave = t.checked;
@@ -1178,27 +1450,55 @@ const CHANNEL = {
   all: { label: 'ทั้งหมู่บ้าน', hint: 'พิมพ์คุยกับทุกคน…' },
   wolf: { label: 'หมาป่า (ลับ)', hint: 'กระซิบกับเพื่อนหมาป่า…' },
   ghost: { label: 'วิญญาณ', hint: 'คุยกับคนที่ตายแล้ว…' },
+  last: { label: 'คำสั่งเสีย', hint: 'พิมพ์คำสั่งเสีย 1 ข้อความ…' },
 };
+
+// One-tap lines so phone players can keep up with the table.
+const QUICK = {
+  all: ['ฉันเป็นชาวบ้าน', 'ฉันคือผู้หยั่งรู้!', 'ฉันบริสุทธิ์นะ', 'ใครเป็นหมาป่า?', 'เห็นด้วย', 'ไม่เห็นด้วย', 'ขอฟังก่อน', '555'],
+  wolf: ['กัดคนนี้ไหม', 'เห็นด้วย', 'เปลี่ยนเป้าดีกว่า', 'ระวังผู้หยั่งรู้', 'พรุ่งนี้ทำตัวปกตินะ'],
+  ghost: ['เสียดายจัง', '555', 'รู้แล้วว่าใคร!', 'ตาเถร'],
+  last: ['ฉันบริสุทธิ์!', 'จำไว้นะ', 'ขอให้หมู่บ้านโชคดี'],
+};
+const REACTIONS = ['👍', '😂', '😮', '😡', '🐺', '❤️'];
+const $chatQuick = document.getElementById('chat-quick');
+let quickShown = '';
+let reactOpen = null;
+let lastHeard = 0;
+
+function messageHtml(v, m) {
+  const p = playerOf(v, m.from) || { name: '?', color: 'slate' };
+  const mine = m.from === v.me.id;
+  const pill = m.ch !== 'all' ? `<span class="ch-pill ch-${m.ch}">${CHANNEL[m.ch].label}</span>` : '';
+  const open = ['lobby', 'end'].includes(v.room.phase);
+  const canReact = open || v.chatChannel === m.ch;
+  const chips = m.reactions
+    .map(([e, n, me]) => `<button class="react ${me ? 'on' : ''}" data-react="${e}" data-id="${m.id}" ${canReact ? '' : 'disabled'} aria-label="${e} ${n}">${e} ${n}</button>`)
+    .join('');
+  const add = canReact ? `<button class="react add" data-react-open="${m.id}" aria-label="กดอีโมจิตอบ" aria-expanded="${reactOpen === m.id}">+</button>` : '';
+  const picker =
+    reactOpen === m.id ? `<div class="react-pick">${REACTIONS.map((e) => `<button class="react" data-react="${e}" data-id="${m.id}">${e}</button>`).join('')}</div>` : '';
+  return `<li class="msg ${mine ? 'mine' : ''} ${m.ch === 'last' ? 'last' : ''}">${face(p, 'face sm')}<div class="bubble"><div class="who">${esc(p.name)} ${pill}${add}</div><div class="text">${esc(m.text)}</div>${
+    chips ? `<div class="reacts">${chips}</div>` : ''
+  }${picker}</div></li>`;
+}
 
 function updateChat(v) {
   // Chat is always on screen while in a room, so nobody misses the talk.
   if ($chat.hidden) return openChat();
   const msgs = v.chat || [];
-  const key = msgs.map((m) => m.id).join(',') + '|' + v.players.map((p) => p.name + p.avatar + p.color).join();
+  const key =
+    JSON.stringify(msgs.map((m) => [m.id, m.reactions])) + '|' + v.chatChannel + '|' + reactOpen + '|' + v.players.map((p) => p.name + p.avatar + p.color).join();
   if (key !== chatShown) {
     chatShown = key;
     const stick = $chatList.scrollHeight - $chatList.scrollTop - $chatList.clientHeight < 40;
-    $chatList.innerHTML = msgs.length
-      ? msgs
-          .map((m) => {
-            const p = playerOf(v, m.from) || { name: '?', color: 'slate' };
-            const mine = m.from === v.me.id;
-            const pill = m.ch !== 'all' ? `<span class="ch-pill ch-${m.ch}">${CHANNEL[m.ch].label}</span>` : '';
-            return `<li class="msg ${mine ? 'mine' : ''}">${face(p, 'face sm')}<div class="bubble"><div class="who">${esc(p.name)} ${pill}</div><div class="text">${esc(m.text)}</div></div></li>`;
-          })
-          .join('')
-      : '<li class="muted small empty">ยังไม่มีข้อความ ทักทายกันก่อนเลย</li>';
+    $chatList.innerHTML = msgs.length ? msgs.map((m) => messageHtml(v, m)).join('') : '<li class="muted small empty">ยังไม่มีข้อความ ทักทายกันก่อนเลย</li>';
     if (stick || $chat.hidden) $chatList.scrollTop = $chatList.scrollHeight;
+  }
+  const newest = msgs.length ? msgs[msgs.length - 1] : null;
+  if (newest && newest.id > lastHeard) {
+    if (lastHeard && newest.from !== v.me.id) Sound.play('pop');
+    lastHeard = newest.id;
   }
   const ch = v.chatChannel;
   const hushed = !ch && v.room.phase !== 'night';
@@ -1207,8 +1507,45 @@ function updateChat(v) {
   $chatInput.disabled = !ch;
   $chatInput.placeholder = ch ? CHANNEL[ch].hint : hushed ? 'พิมพ์ได้อีกครั้งพรุ่งนี้' : 'คุยได้อีกครั้งตอนเช้า';
   $chatForm.querySelector('button').disabled = !ch;
-
+  if (quickShown !== (ch || '')) {
+    quickShown = ch || '';
+    $chatQuick.innerHTML = (QUICK[ch] || []).map((q) => `<button type="button" class="chip-btn" data-quick="${esc(q)}">${esc(q)}</button>`).join('');
+    $chatQuick.hidden = !ch;
+  }
 }
+
+async function sendChat(text) {
+  if (!text || !S.session) return false;
+  try {
+    await api('/api/action', { ...S.session, type: 'chat', text });
+    return true;
+  } catch (err) {
+    toast(err.message);
+    return false;
+  }
+}
+
+$chatQuick.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-quick]');
+  if (b) sendChat(b.dataset.quick);
+});
+
+$chatList.addEventListener('click', async (e) => {
+  const opener = e.target.closest('[data-react-open]');
+  if (opener) {
+    const id = Number(opener.dataset.reactOpen);
+    reactOpen = reactOpen === id ? null : id;
+    return S.view && updateChat(S.view);
+  }
+  const b = e.target.closest('[data-react]');
+  if (!b || b.disabled) return;
+  reactOpen = null;
+  try {
+    await api('/api/action', { ...S.session, type: 'react', id: Number(b.dataset.id), emoji: b.dataset.react });
+  } catch (err) {
+    toast(err.message);
+  }
+});
 
 // Compact by default so the board stays visible; players can enlarge it.
 const $chatSize = document.getElementById('chat-size');
@@ -1237,14 +1574,9 @@ function closeChat() {
 $chatForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const text = $chatInput.value.trim();
-  if (!text || !S.session) return;
+  if (!text) return;
   $chatInput.value = '';
-  try {
-    await api('/api/action', { ...S.session, type: 'chat', text });
-  } catch (err) {
-    $chatInput.value = text;
-    toast(err.message);
-  }
+  if (!(await sendChat(text))) $chatInput.value = text;
 });
 
 render();
