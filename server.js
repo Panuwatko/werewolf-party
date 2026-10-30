@@ -102,12 +102,13 @@ function createRoom(hostName) {
   return { room, player: host };
 }
 
-function addPlayer(room, name) {
+function addPlayer(room, name, bot = false) {
   const p = {
     id: rid(6),
     token: rid(18),
     name,
-    connected: false,
+    bot,
+    connected: bot,
     conns: 0,
     alive: true,
     role: null,
@@ -171,6 +172,7 @@ function startGame(room) {
     p.revealed = false;
     p.seerResults = [];
   });
+  room.gameNo = (room.gameNo || 0) + 1;
   room.rolesInGame = deck.reduce((m, r) => ((m[r] = (m[r] || 0) + 1), m), {});
   room.day = 0;
   room.log = [];
@@ -422,6 +424,104 @@ function advance(room) {
   }
 }
 
+// ---------- bots ----------
+// Bots sit in the room like players and act through the same rules as
+// everyone else, after a short "thinking" pause.
+
+const BOT_NAMES = ['บอทสมชาย', 'บอทมาลี', 'บอทป้าแจ่ม', 'บอทลุงมี', 'บอทน้องฟ้า', 'บอทเจ๊หมวย', 'บอทพี่ตูน', 'บอทยายเพ็ญ', 'บอทหมอเก่ง', 'บอทครูแดง', 'บอทจ่าเฉย', 'บอทเสี่ยโต้ง', 'บอทแม่ส้ม', 'บอทตาบุญ', 'บอทน้าเอก'];
+
+const stageKey = (room) => `${room.gameNo}:${room.phase}:${room.day}:${room.night?.step || ''}`;
+
+function scheduleBots(room) {
+  const key = stageKey(room);
+  for (const p of room.players) {
+    if (!p.bot || p.botKey === key || !botMove(room, p)) continue;
+    p.botKey = key;
+    setTimeout(() => {
+      if (!rooms.has(room.code) || stageKey(room) !== key || !room.players.includes(p)) return;
+      const move = botMove(room, p);
+      if (!move) return;
+      try {
+        move();
+      } catch (e) {
+        console.error(`bot ${p.name}:`, e.message);
+      }
+      broadcast(room);
+    }, 1200 + Math.random() * 2800);
+  }
+}
+
+// Returns the bot's next action for the current stage, or null if it has nothing to do.
+function botMove(room, p) {
+  switch (room.phase) {
+    case 'reveal':
+      return room.ready.has(p.id) ? null : () => handleAction(room, p, { type: 'ready' });
+    case 'night': {
+      const n = room.night;
+      if (n.step === 'main' && p.alive && !n.acts[p.id]) return () => nightAct(room, p, botNightTarget(room, p));
+      if (n.step === 'witch' && p.role === 'witch' && p.alive && (room.witch.heal || room.witch.poison)) return () => witchAct(room, p, botWitch(room, p));
+      return null;
+    }
+    case 'vote':
+      return p.alive && !room.votes[p.id] ? () => castVote(room, p, botVote(room, p)) : null;
+    case 'hunter':
+      return room.hunter?.id === p.id ? () => hunterShoot(room, p, botShot(room, p)) : null;
+  }
+  return null;
+}
+
+function botNightTarget(room, p) {
+  const { kind, options } = nightActionFor(room, p);
+  if (!options.length) return null;
+  if (kind === 'wolf') {
+    // Follow a packmate's choice so the wolves agree.
+    const mate = alivePlayers(room).find((x) => x.role === 'werewolf' && x.id !== p.id && room.night.acts[x.id]?.target);
+    return mate ? room.night.acts[mate.id].target : pick(options);
+  }
+  if (kind === 'seer') {
+    const seen = new Set(p.seerResults.map((r) => r.id));
+    const fresh = options.filter((id) => !seen.has(id));
+    return pick(fresh.length ? fresh : options);
+  }
+  return pick(options);
+}
+
+function botWitch(room, p) {
+  const victim = room.night.wolfTarget;
+  const save = room.witch.heal && !!victim && (victim === p.id || Math.random() < 0.6);
+  let poison = null;
+  if (room.witch.poison && room.day >= 2 && Math.random() < 0.25) {
+    const targets = alivePlayers(room).filter((x) => x.id !== p.id && x.id !== victim);
+    if (targets.length) poison = pick(targets).id;
+  }
+  return { save, poison };
+}
+
+function botVote(room, p) {
+  const others = alivePlayers(room).filter((x) => x.id !== p.id);
+  let pool = others;
+  if (p.role === 'werewolf') pool = others.filter((x) => x.role !== 'werewolf');
+  if (p.role === 'seer') {
+    const wolf = p.seerResults.find((r) => r.isWolf && byId(room, r.id)?.alive);
+    if (wolf) return wolf.id;
+    const clean = new Set(p.seerResults.filter((r) => !r.isWolf).map((r) => r.id));
+    pool = others.filter((x) => !clean.has(x.id));
+  }
+  if (!pool.length) return 'skip';
+  if (p.role !== 'werewolf' && Math.random() < 0.08) return 'skip';
+  // Half the time, side with whoever already has the most votes.
+  const tally = {};
+  for (const v of Object.values(room.votes)) if (pool.some((x) => x.id === v)) tally[v] = (tally[v] || 0) + 1;
+  const leader = Object.keys(tally).sort((a, b) => tally[b] - tally[a])[0];
+  if (leader && Math.random() < 0.5) return leader;
+  return pick(pool).id;
+}
+
+function botShot(room, p) {
+  const targets = alivePlayers(room).filter((x) => x.id !== p.id);
+  return targets.length ? pick(targets).id : null;
+}
+
 // ---------- per-player view ----------
 
 function viewFor(room, me) {
@@ -435,6 +535,7 @@ function viewFor(room, me) {
     return {
       id: p.id,
       name: p.name,
+      bot: p.bot,
       alive: p.alive,
       connected: p.connected,
       isHost: p.id === room.hostId,
@@ -526,6 +627,7 @@ function send(conn, room) {
 function broadcast(room) {
   room.lastActive = Date.now();
   for (const conn of room.conns) send(conn, room);
+  scheduleBots(room);
 }
 
 // ---------- actions ----------
@@ -563,6 +665,15 @@ function handleAction(room, p, body) {
       if (problem) throw new Error(problem);
       return startGame(room);
     }
+    case 'add-bot': {
+      hostOnly();
+      if (room.phase !== 'lobby') throw new Error('เพิ่มบอทได้เฉพาะก่อนเริ่มเกม');
+      if (room.players.length >= MAX_PLAYERS) throw new Error(`ห้องเต็มแล้ว (สูงสุด ${MAX_PLAYERS} คน)`);
+      const taken = new Set(room.players.map((x) => x.name));
+      const name = BOT_NAMES.find((n) => !taken.has(n)) || `บอท ${room.players.length + 1}`;
+      addPlayer(room, name, true);
+      return;
+    }
     case 'kick': {
       hostOnly();
       if (room.phase !== 'lobby') throw new Error('เตะผู้เล่นได้เฉพาะก่อนเริ่มเกม');
@@ -574,9 +685,13 @@ function handleAction(room, p, body) {
     case 'leave': {
       if (room.phase !== 'lobby') throw new Error('ออกจากห้องได้เฉพาะก่อนเริ่มเกม');
       room.players = room.players.filter((x) => x.id !== p.id);
-      if (room.hostId === p.id && room.players[0]) room.hostId = room.players[0].id;
+      const human = room.players.find((x) => !x.bot);
+      if (!human) {
+        rooms.delete(room.code);
+        return;
+      }
+      if (room.hostId === p.id) room.hostId = human.id;
       if (room.settings.autoRoles) room.settings.roles = suggestedRoles(Math.max(MIN_PLAYERS, room.players.length));
-      if (!room.players.length) rooms.delete(room.code);
       return;
     }
     case 'ready': {

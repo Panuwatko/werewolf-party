@@ -297,6 +297,7 @@ function token(p, v, o = {}) {
   else if (p.voted) tag += `<span class="tag">โหวตแล้ว</span>`;
   if (!p.connected) tag += `<span class="tag">หลุดการเชื่อมต่อ</span>`;
   if (p.isHost && !inGame) tag += `<span class="tag host">หัวห้อง</span>`;
+  if (p.bot) tag += `<span class="tag">บอท</span>`;
 
   const badge = o.badges?.[p.id] ? `<span class="badge ${o.badges[p.id].ok ? 'ok' : ''}">${esc(o.badges[p.id].text)}</span>` : '';
   const kick = o.kick && !isMe ? `<button class="kick" data-do="kick" data-id="${p.id}" aria-label="เชิญ ${esc(p.name)} ออกจากห้อง" title="เชิญออกจากห้อง">✕</button>` : '';
@@ -473,6 +474,11 @@ function renderLobby(v) {
   <section class="panel">
     <div class="row spread"><h2>ผู้เล่น</h2><span class="muted small">${n} / ${v.room.limits.max} คน</span></div>
     ${board(v, { kick: host })}
+    ${
+      host
+        ? `<div class="row spread"><p class="small muted">คนไม่ครบ? เพิ่มบอทมาเล่นด้วยได้ บอทเล่นบทบาทของตัวเองอัตโนมัติ</p><button class="btn" data-do="add-bot" ${n >= v.room.limits.max ? 'disabled' : ''}>+ เพิ่มบอท</button></div>`
+        : ''
+    }
   </section>
 
   <section class="panel">
@@ -809,6 +815,8 @@ $app.addEventListener('click', (e) => {
     }
     case 'kick':
       return act('kick', { id: b.dataset.id });
+    case 'add-bot':
+      return act('add-bot');
     case 'role': {
       const k = b.dataset.role;
       return act('settings', { settings: { roles: { [k]: v.room.settings.roles[k] + Number(b.dataset.d) } } });
